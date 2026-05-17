@@ -1,0 +1,181 @@
+{
+  "info": {
+    "name": "Customer Service API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8083" },
+    { "key": "token",    "value": "YOUR_JWT_TOKEN_HERE" }
+  ],
+  "item": [
+    {
+      "name": "Customer",
+      "item": [
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/customers" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"contactInfo\": \"{\\\"email\\\":\\\"john@test.com\\\",\\\"phone\\\":\\\"9876543210\\\"}\",\n  \"loyaltyTier\": \"GOLD\",\n  \"status\": \"ACTIVE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get All Customers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/customers" }
+          }
+        },
+        {
+          "name": "Get Customer by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/customers/1" }
+          }
+        },
+        {
+          "name": "Update Customer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/customers/1" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"contactInfo\": \"{\\\"email\\\":\\\"john2@test.com\\\"}\",\n  \"loyaltyTier\": \"PLATINUM\",\n  \"status\": \"ACTIVE\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Customer",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/customers/1" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lead",
+      "item": [
+        {
+          "name": "Create Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/leads" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": 1,\n  \"source\": \"WEBSITE\",\n  \"interestedModel\": \"Honda CR-V\",\n  \"notes\": \"Customer interested in SUV segment\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Lead by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/leads/1" }
+          }
+        },
+        {
+          "name": "Get Leads by Customer",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/leads/customer/1" }
+          }
+        },
+        {
+          "name": "Assign Lead",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/leads/1/assign?userId=5",
+              "query": [{ "key": "userId", "value": "5" }]
+            }
+          }
+        },
+        {
+          "name": "Update Lead Status",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/leads/1/update-status?status=CONTACTED",
+              "query": [{ "key": "status", "value": "CONTACTED" }]
+            }
+          }
+        },
+        {
+          "name": "Convert Lead",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/leads/1/convert" }
+          }
+        },
+        {
+          "name": "Close Lead",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/leads/1/close" }
+          }
+        },
+        {
+          "name": "Delete Lead",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/leads/1" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Interaction",
+      "item": [
+        {
+          "name": "Log Interaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/interactions/log" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": 1,\n  \"userId\": 1,\n  \"channel\": \"CALL\",\n  \"message\": \"Discussed pricing options with customer\",\n  \"outcome\": \"FOLLOW_UP\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Interactions by Customer",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/interactions/1" }
+          }
+        }
+      ]
+    }
+  ]
+}
