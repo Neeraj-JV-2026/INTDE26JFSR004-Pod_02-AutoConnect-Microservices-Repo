@@ -1,0 +1,151 @@
+// ============================================================
+// AutoConnect — Typography
+// ============================================================
+
+// Heading styles using Playfair Display
+h1, h2, h3,
+.h1, .h2, .h3 {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: $ac-text-primary;
+}
+
+h1, .h1 {
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
+}
+
+h2, .h2 {
+  font-size: clamp(1.4rem, 2.5vw, 2rem);
+}
+
+h3, .h3 {
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+}
+
+h4, h5, h6,
+.h4, .h5, .h6 {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  color: $ac-text-primary;
+}
+
+// Body text
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: $font-size-base;
+  color: $ac-text-primary;
+  background-color: $ac-bg-page;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// Brand / Logo text
+.ac-brand-text {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: $ac-gold;
+  text-transform: uppercase;
+}
+
+// Gold accent text
+.ac-text-gold {
+  color: $ac-gold !important;
+}
+
+.ac-text-muted {
+  color: $ac-text-muted !important;
+}
+
+// Section labels / overlines
+.ac-overline {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: $ac-text-faint;
+}
+
+// Large display number (e.g., stat card values)
+.ac-display-value {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+  font-weight: 700;
+  color: $ac-text-primary;
+  line-height: 1;
+}
+
+// Table typography
+table {
+  font-size: 0.875rem;
+
+  thead th {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: $ac-text-muted;
+  }
+
+  tbody td {
+    color: $ac-text-primary;
+    vertical-align: middle;
+  }
+}
+
+// Code / mono
+code, pre {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.85em;
+  color: $ac-gold-hover;
+}
+
+// Labels
+label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: $ac-text-muted;
+  margin-bottom: 0.375rem;
+}
+
+// Small utility
+small, .small {
+  font-size: 0.8125rem;
+  color: $ac-text-muted;
+}
+
+// Paragraph
+p {
+  color: $ac-text-primary;
+  line-height: 1.7;
+}
+
+// Blockquote
+blockquote {
+  border-left: 3px solid $ac-gold;
+  padding-left: 1rem;
+  color: $ac-text-muted;
+  font-style: italic;
+}
+
+// Custom scrollbar
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: $ac-bg-sidebar;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.3);
+  border-radius: 3px;
+
+  &:hover {
+    background: rgba(212, 175, 55, 0.6);
+  }
+}

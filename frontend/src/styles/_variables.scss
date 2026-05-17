@@ -1,0 +1,180 @@
+// ============================================================
+// AutoConnect — Bootstrap Variable Overrides + Custom AC Vars
+// ============================================================
+
+// --- Custom AC Variables ---
+$ac-gold:              #D4AF37;
+$ac-gold-hover:        #F0D060;
+$ac-gold-muted:        rgba(212, 175, 55, 0.6);
+$ac-gold-border:       rgba(212, 175, 55, 0.15);
+$ac-gold-glow:         rgba(212, 175, 55, 0.25);
+
+// Semantic status colors
+$ac-danger:            #E74C3C;
+$ac-success:           #2ECC71;
+$ac-warning:           #F39C12;
+$ac-info:              #3498DB;
+
+$ac-bg-page:           #0F0F0F;
+$ac-bg-sidebar:        #141414;
+$ac-bg-surface:        #1A1A1A;
+$ac-bg-surface-2:      #202020;
+$ac-bg-glass:          rgba(26, 26, 26, 0.85);
+
+$ac-text-primary:      #E0E0E0;
+$ac-text-muted:        #9E9E9E;
+$ac-text-faint:        #5A5A5A;
+
+$ac-sidebar-width:     260px;
+$ac-sidebar-collapsed: 72px;
+$ac-topbar-height:     64px;
+
+$ac-border-radius:     8px;
+$ac-border-radius-lg:  12px;
+$ac-border-radius-xl:  16px;
+
+$ac-transition:        all 0.25s ease;
+$ac-transition-slow:   all 0.4s ease;
+
+$ac-shadow-card:       0 4px 24px rgba(0, 0, 0, 0.4);
+$ac-shadow-gold:       0 0 20px rgba(212, 175, 55, 0.15);
+$ac-shadow-modal:      0 20px 60px rgba(0, 0, 0, 0.7);
+
+// --- Bootstrap Variable Overrides (must be before bootstrap import) ---
+
+// Colors
+$primary:              $ac-gold;
+$secondary:            #3A3A3A;
+$success:              #2ECC71;
+$info:                 #3498DB;
+$warning:              #F39C12;
+$danger:               #E74C3C;
+$light:                #2A2A2A;
+$dark:                 #0F0F0F;
+
+// Body
+$body-bg:              $ac-bg-page;
+$body-color:           $ac-text-primary;
+
+// Typography
+$font-family-sans-serif: 'Inter', system-ui, -apple-system, sans-serif;
+$font-family-serif:      'Playfair Display', Georgia, serif;
+$font-size-base:         0.9375rem; // 15px
+$line-height-base:       1.6;
+$headings-font-weight:   600;
+$headings-color:         $ac-text-primary;
+
+// Links
+$link-color:             $ac-gold;
+$link-hover-color:       $ac-gold-hover;
+$link-decoration:        none;
+$link-hover-decoration:  underline;
+
+// Cards
+$card-bg:                $ac-bg-surface;
+$card-border-color:      $ac-gold-border;
+$card-border-radius:     $ac-border-radius-lg;
+$card-cap-bg:            $ac-bg-surface;
+$card-color:             $ac-text-primary;
+$card-box-shadow:        $ac-shadow-card;
+
+// Inputs & Forms
+$input-bg:               $ac-bg-surface-2;
+$input-border-color:     rgba(255, 255, 255, 0.1);
+$input-color:            $ac-text-primary;
+$input-placeholder-color: $ac-text-faint;
+$input-focus-bg:         $ac-bg-surface;
+$input-focus-border-color: $ac-gold;
+$input-focus-box-shadow: 0 0 0 3px $ac-gold-glow;
+$input-border-radius:    $ac-border-radius;
+$input-padding-y:        0.625rem;
+$input-padding-x:        1rem;
+
+// Select
+$form-select-bg:         $ac-bg-surface-2;
+$form-select-border-color: rgba(255, 255, 255, 0.1);
+$form-select-color:      $ac-text-primary;
+$form-select-focus-border-color: $ac-gold;
+$form-select-focus-box-shadow: 0 0 0 3px $ac-gold-glow;
+$form-select-indicator-color: $ac-text-muted;
+
+// Dropdowns
+$dropdown-bg:            $ac-bg-surface;
+$dropdown-border-color:  $ac-gold-border;
+$dropdown-color:         $ac-text-primary;
+$dropdown-link-color:    $ac-text-primary;
+$dropdown-link-hover-bg: rgba(212, 175, 55, 0.1);
+$dropdown-link-hover-color: $ac-gold;
+$dropdown-link-active-bg: rgba(212, 175, 55, 0.15);
+$dropdown-link-active-color: $ac-gold;
+$dropdown-divider-bg:    rgba(255, 255, 255, 0.08);
+
+// Modals
+$modal-content-bg:       $ac-bg-glass;
+$modal-content-border-color: $ac-gold-border;
+$modal-backdrop-opacity: 0.7;
+$modal-header-border-color: $ac-gold-border;
+$modal-footer-border-color: $ac-gold-border;
+
+// Navs
+$nav-link-color:         $ac-text-muted;
+$nav-link-hover-color:   $ac-gold;
+$nav-tabs-border-color:  $ac-gold-border;
+$nav-tabs-link-active-color: $ac-gold;
+$nav-tabs-link-active-bg: $ac-bg-surface;
+$nav-tabs-link-active-border-color: $ac-gold-border;
+
+// Tables
+$table-color:            $ac-text-primary;
+$table-bg:               transparent;
+$table-striped-bg:       rgba(255, 255, 255, 0.025);
+$table-hover-bg:         rgba(212, 175, 55, 0.05);
+$table-border-color:     rgba(255, 255, 255, 0.08);
+$table-cell-padding-y:   0.75rem;
+$table-cell-padding-x:   1rem;
+
+// Badges
+$badge-border-radius:    4px;
+$badge-font-size:        0.7rem;
+$badge-font-weight:      600;
+
+// Pagination
+$pagination-bg:           $ac-bg-surface;
+$pagination-border-color: $ac-gold-border;
+$pagination-color:        $ac-text-muted;
+$pagination-hover-bg:     rgba(212, 175, 55, 0.1);
+$pagination-hover-color:  $ac-gold;
+$pagination-active-bg:    $ac-gold;
+$pagination-active-color: #000;
+$pagination-active-border-color: $ac-gold;
+
+// Alerts
+$alert-border-radius:    $ac-border-radius;
+
+// Borders
+$border-color:           rgba(255, 255, 255, 0.08);
+$border-radius:          $ac-border-radius;
+$border-radius-sm:       4px;
+$border-radius-lg:       $ac-border-radius-lg;
+$border-radius-xl:       $ac-border-radius-xl;
+
+// Shadows
+$box-shadow:             $ac-shadow-card;
+$box-shadow-sm:          0 2px 8px rgba(0, 0, 0, 0.3);
+$box-shadow-lg:          0 8px 32px rgba(0, 0, 0, 0.5);
+
+// Transitions
+$transition-base:        $ac-transition;
+$transition-fade:        opacity 0.2s ease;
+
+// Scrollbar
+$scrollbar-width:        6px;
+$scrollbar-track-bg:     $ac-bg-sidebar;
+$scrollbar-thumb-bg:     rgba(212, 175, 55, 0.3);
+$scrollbar-thumb-hover:  rgba(212, 175, 55, 0.6);
+
+// Grid / Breakpoints (Bootstrap defaults are fine, but we can tune)
+$grid-gutter-width: 1.5rem;
+
+// Spacer
+$spacer: 1rem;

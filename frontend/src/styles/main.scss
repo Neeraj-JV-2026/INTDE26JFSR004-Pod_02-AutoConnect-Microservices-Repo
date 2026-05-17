@@ -1,0 +1,16 @@
+// ============================================================
+// AutoConnect — Main SCSS Entry Point
+// Import order matters: variables → bootstrap → custom styles
+// ============================================================
+
+// 1. Our variable overrides (must come BEFORE bootstrap)
+@import 'variables';
+
+// 2. Bootstrap (uses our overridden variables)
+@import 'bootstrap/scss/bootstrap';
+
+// 3. Custom styles (can use bootstrap mixins & our variables)
+@import 'typography';
+@import 'layout';
+@import 'components';
+@import 'animations';

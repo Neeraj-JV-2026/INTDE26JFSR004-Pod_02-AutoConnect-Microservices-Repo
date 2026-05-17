@@ -1,0 +1,753 @@
+// ============================================================
+// AutoConnect — Component Styles
+// ============================================================
+
+// ─── AC Card (Glassmorphism) ──────────────────────────────────
+.ac-card {
+  background: $ac-bg-glass;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid $ac-gold-border;
+  border-radius: $ac-border-radius-lg;
+  padding: 1.5rem;
+  box-shadow: $ac-shadow-card;
+  transition: $ac-transition;
+  color: $ac-text-primary;
+
+  &:hover {
+    border-color: rgba(212, 175, 55, 0.3);
+    box-shadow: $ac-shadow-gold, $ac-shadow-card;
+    transform: translateY(-1px);
+  }
+
+  &--flat {
+    backdrop-filter: none;
+    background: $ac-bg-surface;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.875rem;
+    border-bottom: 1px solid $ac-gold-border;
+  }
+
+  &__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: $ac-text-primary;
+    margin: 0;
+  }
+
+  &__footer {
+    margin-top: 1.25rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid $ac-gold-border;
+  }
+}
+
+// ─── Stat Card ────────────────────────────────────────────────
+.ac-stat-card {
+  background: $ac-bg-surface;
+  border: 1px solid $ac-gold-border;
+  border-radius: $ac-border-radius-lg;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  transition: $ac-transition;
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, $ac-gold, transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  &:hover {
+    border-color: rgba(212, 175, 55, 0.35);
+    box-shadow: $ac-shadow-gold;
+    transform: translateY(-2px);
+
+    &::before {
+      opacity: 1;
+    }
+  }
+
+  &__icon-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    background: rgba(212, 175, 55, 0.12);
+    color: $ac-gold;
+    flex-shrink: 0;
+  }
+
+  &__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: $ac-text-faint;
+    margin: 0;
+  }
+
+  &__value {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+    font-weight: 700;
+    color: $ac-text-primary;
+    line-height: 1;
+    margin: 0;
+  }
+
+  &__trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 20px;
+
+    &--up {
+      color: #2ECC71;
+      background: rgba(46, 204, 113, 0.1);
+    }
+
+    &--down {
+      color: #E74C3C;
+      background: rgba(231, 76, 60, 0.1);
+    }
+
+    &--neutral {
+      color: $ac-text-muted;
+      background: rgba(255, 255, 255, 0.06);
+    }
+  }
+}
+
+// ─── Role Badge ───────────────────────────────────────────────
+.ac-badge-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &--admin         { background: rgba(231, 76, 60, 0.15);   color: #E74C3C;  border: 1px solid rgba(231, 76, 60, 0.3); }
+  &--sales-manager { background: rgba(52, 152, 219, 0.15);  color: #3498DB;  border: 1px solid rgba(52, 152, 219, 0.3); }
+  &--sales-agent   { background: rgba(52, 152, 219, 0.1);   color: #5DADE2;  border: 1px solid rgba(93, 173, 226, 0.3); }
+  &--sales-consultant { background: rgba(52, 152, 219, 0.08); color: #7FB3D3; border: 1px solid rgba(127, 179, 211, 0.25); }
+  &--finance       { background: rgba(212, 175, 55, 0.12);  color: $ac-gold; border: 1px solid $ac-gold-border; }
+  &--service       { background: rgba(46, 204, 113, 0.12);  color: #2ECC71;  border: 1px solid rgba(46, 204, 113, 0.3); }
+  &--inventory     { background: rgba(155, 89, 182, 0.12);  color: #9B59B6;  border: 1px solid rgba(155, 89, 182, 0.3); }
+  &--parts         { background: rgba(243, 156, 18, 0.12);  color: #F39C12;  border: 1px solid rgba(243, 156, 18, 0.3); }
+  &--auditor       { background: rgba(149, 165, 166, 0.12); color: #95A5A6;  border: 1px solid rgba(149, 165, 166, 0.25); }
+  &--customer      { background: rgba(26, 188, 156, 0.12);  color: #1ABC9C;  border: 1px solid rgba(26, 188, 156, 0.3); }
+}
+
+// ─── Gold Button ──────────────────────────────────────────────
+.ac-btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.5rem;
+  background: linear-gradient(135deg, $ac-gold, #C9A227);
+  color: #000;
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.03em;
+  border: none;
+  border-radius: $ac-border-radius;
+  cursor: pointer;
+  transition: $ac-transition;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    background: linear-gradient(135deg, $ac-gold-hover, $ac-gold);
+    color: #000;
+    box-shadow: 0 4px 16px rgba(212, 175, 55, 0.35);
+    transform: translateY(-1px);
+    text-decoration: none;
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  &:disabled,
+  &.disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  &--sm {
+    padding: 0.4rem 1rem;
+    font-size: 0.8125rem;
+  }
+
+  &--lg {
+    padding: 0.875rem 2rem;
+    font-size: 1rem;
+  }
+
+  &--outline {
+    background: transparent;
+    color: $ac-gold;
+    border: 1.5px solid $ac-gold;
+
+    &:hover {
+      background: rgba(212, 175, 55, 0.1);
+      color: $ac-gold-hover;
+      box-shadow: 0 0 16px rgba(212, 175, 55, 0.2);
+    }
+  }
+
+  &--ghost {
+    background: rgba(212, 175, 55, 0.08);
+    color: $ac-gold;
+    border: 1px solid $ac-gold-border;
+
+    &:hover {
+      background: rgba(212, 175, 55, 0.15);
+      color: $ac-gold-hover;
+    }
+  }
+}
+
+// ─── AC Input ─────────────────────────────────────────────────
+.ac-input {
+  width: 100%;
+  background: $ac-bg-surface-2;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: $ac-border-radius;
+  color: $ac-text-primary;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9375rem;
+  padding: 0.625rem 1rem;
+  transition: $ac-transition;
+  outline: none;
+
+  &::placeholder {
+    color: $ac-text-faint;
+  }
+
+  &:focus {
+    border-color: $ac-gold;
+    background: $ac-bg-surface;
+    box-shadow: 0 0 0 3px $ac-gold-glow;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &--error {
+    border-color: #E74C3C !important;
+    box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.15) !important;
+  }
+}
+
+.ac-input-group {
+  position: relative;
+
+  .ac-input-icon {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: $ac-text-faint;
+    font-size: 1rem;
+    pointer-events: none;
+  }
+
+  .ac-input {
+    padding-left: 2.75rem;
+  }
+}
+
+// ─── Nav Item (Sidebar) ───────────────────────────────────────
+// (Defined in _layout.scss as .ac-sidebar-nav-item)
+// Additional states:
+.ac-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-radius: $ac-border-radius;
+  color: $ac-text-muted;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: $ac-transition;
+
+  &:hover {
+    color: $ac-text-primary;
+    background: rgba(255, 255, 255, 0.05);
+    text-decoration: none;
+  }
+
+  &.active {
+    color: $ac-gold;
+    background: rgba(212, 175, 55, 0.1);
+    font-weight: 600;
+  }
+
+  i {
+    width: 18px;
+    text-align: center;
+  }
+}
+
+// ─── Table ────────────────────────────────────────────────────
+.ac-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+
+  thead {
+    tr {
+      border-bottom: 2px solid $ac-gold-border;
+    }
+
+    th {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: $ac-text-faint;
+      padding: 0.875rem 1rem;
+      background: $ac-bg-surface;
+      position: sticky;
+      top: 0;
+
+      &:first-child {
+        border-radius: $ac-border-radius 0 0 0;
+      }
+
+      &:last-child {
+        border-radius: 0 $ac-border-radius 0 0;
+      }
+    }
+  }
+
+  tbody {
+    tr {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      transition: background 0.15s ease;
+
+      &:hover {
+        background: rgba(212, 175, 55, 0.04);
+      }
+
+      &:last-child td {
+        border-bottom: none;
+      }
+    }
+
+    td {
+      padding: 0.875rem 1rem;
+      color: $ac-text-primary;
+      font-size: 0.875rem;
+      vertical-align: middle;
+    }
+  }
+
+  &--bordered {
+    border: 1px solid $ac-gold-border;
+    border-radius: $ac-border-radius-lg;
+    overflow: hidden;
+  }
+}
+
+.ac-table-wrapper {
+  background: $ac-bg-surface;
+  border: 1px solid $ac-gold-border;
+  border-radius: $ac-border-radius-lg;
+  overflow: hidden;
+  overflow-x: auto;
+}
+
+// ─── Avatar ───────────────────────────────────────────────────
+.ac-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.05));
+  border: 2px solid $ac-gold-border;
+  color: $ac-gold;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-family: 'Inter', sans-serif;
+  overflow: hidden;
+  flex-shrink: 0;
+
+  &--sm  { width: 32px;  height: 32px;  font-size: 0.75rem; }
+  &--md  { width: 40px;  height: 40px;  font-size: 0.875rem; }
+  &--lg  { width: 56px;  height: 56px;  font-size: 1.125rem; }
+  &--xl  { width: 80px;  height: 80px;  font-size: 1.5rem; }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+// ─── Loading Spinner ──────────────────────────────────────────
+.ac-spinner-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 15, 15, 0.85);
+  backdrop-filter: blur(6px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  gap: 1.25rem;
+}
+
+.ac-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(212, 175, 55, 0.15);
+  border-top-color: $ac-gold;
+  border-radius: 50%;
+  animation: acSpin 0.8s linear infinite;
+}
+
+.ac-spinner-text {
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: $ac-gold;
+  letter-spacing: 0.06em;
+}
+
+@keyframes acSpin {
+  to { transform: rotate(360deg); }
+}
+
+// ─── Quick Action Card ────────────────────────────────────────
+.ac-quick-action-card {
+  background: $ac-bg-surface;
+  border: 1px solid $ac-gold-border;
+  border-radius: $ac-border-radius-lg;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-decoration: none;
+  color: $ac-text-primary;
+  transition: $ac-transition;
+  cursor: pointer;
+
+  &:hover {
+    border-color: $ac-gold;
+    background: rgba(212, 175, 55, 0.06);
+    color: $ac-gold;
+    text-decoration: none;
+    transform: translateX(4px);
+    box-shadow: $ac-shadow-gold;
+  }
+
+  .ac-quick-action-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: rgba(212, 175, 55, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: $ac-gold;
+    flex-shrink: 0;
+    transition: $ac-transition;
+  }
+
+  &:hover .ac-quick-action-icon {
+    background: rgba(212, 175, 55, 0.2);
+  }
+
+  .ac-quick-action-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .ac-quick-action-arrow {
+    color: $ac-text-faint;
+    transition: $ac-transition;
+  }
+
+  &:hover .ac-quick-action-arrow {
+    color: $ac-gold;
+  }
+}
+
+// ─── Module Coming Soon ───────────────────────────────────────
+.ac-coming-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+
+  &__icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(212, 175, 55, 0.1);
+    border: 2px solid $ac-gold-border;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: $ac-gold;
+    margin-bottom: 1.5rem;
+    animation: pulseGold 2s ease-in-out infinite;
+  }
+
+  &__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: $ac-text-primary;
+    margin-bottom: 0.75rem;
+  }
+
+  &__desc {
+    color: $ac-text-muted;
+    font-size: 0.9375rem;
+    max-width: 480px;
+    line-height: 1.7;
+    margin-bottom: 2rem;
+  }
+
+  &__features {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: left;
+    max-width: 400px;
+    width: 100%;
+
+    li {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      font-size: 0.875rem;
+      color: $ac-text-muted;
+      padding: 0.5rem 0.75rem;
+      background: $ac-bg-surface;
+      border-radius: $ac-border-radius;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+
+      &::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: $ac-gold;
+        flex-shrink: 0;
+      }
+    }
+  }
+}
+
+// ─── Notification Bell ────────────────────────────────────────
+.ac-notif-btn {
+  position: relative;
+  background: none;
+  border: none;
+  color: $ac-text-muted;
+  cursor: pointer;
+  padding: 0.4rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  transition: $ac-transition;
+
+  &:hover {
+    color: $ac-gold;
+    background: rgba(212, 175, 55, 0.1);
+  }
+
+  .ac-notif-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    background: #E74C3C;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.6rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid $ac-bg-page;
+  }
+}
+
+// ─── User Dropdown ────────────────────────────────────────────
+.ac-user-dropdown {
+  .dropdown-toggle {
+    background: none;
+    border: 1px solid $ac-gold-border;
+    border-radius: 8px;
+    padding: 0.375rem 0.625rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: $ac-text-primary;
+    cursor: pointer;
+    transition: $ac-transition;
+
+    &::after {
+      display: none;
+    }
+
+    &:hover {
+      border-color: $ac-gold;
+      background: rgba(212, 175, 55, 0.06);
+    }
+  }
+
+  .dropdown-menu {
+    background: $ac-bg-surface;
+    border: 1px solid $ac-gold-border;
+    border-radius: $ac-border-radius-lg;
+    padding: 0.5rem;
+    min-width: 200px;
+    box-shadow: $ac-shadow-modal;
+
+    .dropdown-item {
+      padding: 0.5rem 0.75rem;
+      border-radius: $ac-border-radius;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      color: $ac-text-muted;
+
+      &:hover {
+        background: rgba(212, 175, 55, 0.08);
+        color: $ac-gold;
+      }
+
+      &.text-danger {
+        color: #E74C3C !important;
+
+        &:hover {
+          background: rgba(231, 76, 60, 0.1);
+          color: #E74C3C !important;
+        }
+      }
+    }
+
+    .dropdown-divider {
+      border-color: $ac-gold-border;
+      margin: 0.375rem 0;
+    }
+  }
+}
+
+// ─── Alert / Toast Styles ─────────────────────────────────────
+.ac-alert {
+  padding: 0.875rem 1.125rem;
+  border-radius: $ac-border-radius;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  border: 1px solid;
+  margin-bottom: 1rem;
+
+  &--error {
+    background: rgba(231, 76, 60, 0.1);
+    border-color: rgba(231, 76, 60, 0.3);
+    color: #E74C3C;
+  }
+
+  &--success {
+    background: rgba(46, 204, 113, 0.1);
+    border-color: rgba(46, 204, 113, 0.3);
+    color: #2ECC71;
+  }
+
+  &--warning {
+    background: rgba(212, 175, 55, 0.1);
+    border-color: $ac-gold-border;
+    color: $ac-gold;
+  }
+
+  &--info {
+    background: rgba(52, 152, 219, 0.1);
+    border-color: rgba(52, 152, 219, 0.3);
+    color: #3498DB;
+  }
+}
+
+// ─── Section divider ──────────────────────────────────────────
+.ac-divider {
+  height: 1px;
+  background: $ac-gold-border;
+  margin: 1.5rem 0;
+}
+
+// ─── Loading inline ───────────────────────────────────────────
+.ac-loading-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+
+  span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: $ac-gold;
+    animation: loadingDot 1.2s ease-in-out infinite;
+
+    &:nth-child(2) { animation-delay: 0.2s; }
+    &:nth-child(3) { animation-delay: 0.4s; }
+  }
+}
+
+@keyframes loadingDot {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
+}
