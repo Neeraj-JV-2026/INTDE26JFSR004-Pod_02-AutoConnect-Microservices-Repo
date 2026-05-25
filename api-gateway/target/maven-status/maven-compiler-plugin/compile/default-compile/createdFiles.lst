@@ -1,0 +1,4 @@
+com\cognizant\api_gateway\filter\AuthenticationFilter.class
+com\cognizant\api_gateway\ApiGatewayApplication.class
+com\cognizant\api_gateway\config\GatewayConfig.class
+com\cognizant\api_gateway\filter\AuthenticationFilter$MutableHttpServletRequest.class

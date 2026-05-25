@@ -1,0 +1,126 @@
+server:
+  port: 8089
+
+spring:
+  application:
+    name: api-gateway
+  main:
+    web-application-type: servlet
+
+  cloud:
+    gateway:
+      mvc:
+        routes:
+
+          # ── user-service (port 8082) ────────────────────────────────
+          - id: auth-routes
+            uri: lb://user-service
+            predicates:
+              - Path=/api/auth/**
+
+          - id: user-routes
+            uri: lb://user-service
+            predicates:
+              - Path=/api/users/**
+
+          - id: audit-log-routes
+            uri: lb://user-service
+            predicates:
+              - Path=/api/audit-logs/**
+
+          # ── customer-service (port 8083) ────────────────────────────
+          - id: customer-routes
+            uri: lb://customer-service
+            predicates:
+              - Path=/api/customers/**
+
+          - id: interaction-routes
+            uri: lb://customer-service
+            predicates:
+              - Path=/api/interactions/**
+
+          - id: lead-routes
+            uri: lb://customer-service
+            predicates:
+              - Path=/api/leads/**
+
+          # ── inventory-service (port 8085) ───────────────────────────
+          - id: inventory-routes
+            uri: lb://inventory-service
+            predicates:
+              - Path=/api/inventory/**
+
+          - id: inventory-v1-routes
+            uri: lb://inventory-service
+            predicates:
+              - Path=/api/v1/inventory/**
+
+
+          # ── sales-service (port 8084) ───────────────────────────────
+          - id: sales-routes
+            uri: lb://sales-service
+            predicates:
+              - Path=/api/sales/**
+
+          # ── finance-service (port 8086) ─────────────────────────────
+          - id: finance-routes
+            uri: lb://finance-service
+            predicates:
+              - Path=/api/finance/**
+
+          # ── service-management-service (port 8081) ──────────────────
+          - id: appointment-routes
+            uri: lb://service-management-service
+            predicates:
+              - Path=/api/appointments/**
+
+          - id: workorder-routes
+            uri: lb://service-management-service
+            predicates:
+              - Path=/api/workorders/**
+
+          - id: jobcard-routes
+            uri: lb://service-management-service
+            predicates:
+              - Path=/api/jobcards/**
+
+          - id: parts-routes
+            uri: lb://service-management-service
+            predicates:
+              - Path=/api/v1/parts/**
+
+          - id: warranty-routes
+            uri: lb://service-management-service
+            predicates:
+              - Path=/api/v1/warranties/**
+
+          - id: service-media-routes
+            uri: lb://service-management-service
+            predicates:
+              - Path=/api/service/media/**
+
+          # ── notification-service (port 8090) ────────────────────────
+          - id: notification-routes
+            uri: lb://notification-service
+            predicates:
+              - Path=/api/notifications/**
+
+eureka:
+  client:
+    enabled: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    prefer-ip-address: true
+
+# JWT secret — must match the secret used in user-service
+app:
+  jwt:
+    secret: 3cfa76ef14937c1c0ea519f8fc057a80fcd04a7420f8e8bcd0a7567c272e007
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG
+    com.cognizant.api_gateway: DEBUG
