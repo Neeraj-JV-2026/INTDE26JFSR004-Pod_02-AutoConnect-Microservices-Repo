@@ -30,6 +30,22 @@ export default function TechnicianConsole() {
 
   const [clockInLoading, setClockInLoading] = useState(false);
 
+  const [partsUsed, setPartsUsed] = useState<any[]>([]);
+  const [requestingPart, setRequestingPart] = useState<number | null>(null);
+  // partId → quantityOnHand (live from inventory-service)
+  const [partInventory, setPartInventory] = useState<Record<number, number>>({});
+  const [partError, setPartError] = useState('');
+
+  const [photoFiles, setPhotoFiles] = useState<{ name: string; url: string }[]>([]);
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const previews = files.map(f => ({ name: f.name, url: URL.createObjectURL(f) }));
+    setPhotoFiles(prev => [...prev, ...previews]);
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = '';
+  };
+
   const [signOffData, setSignOffData] = useState({ findings: '', actions: 'Standard service completed' });
   const [signOffLoading, setSignOffLoading] = useState(false);
   const [signOffError, setSignOffError] = useState('');
@@ -60,6 +76,35 @@ export default function TechnicianConsole() {
     }
   };
 
+  const handleRequestPart = async (part: any) => {
+    if (!activeJob) {
+      setPartError('Clock into a job first before logging parts usage.');
+      return;
+    }
+    setPartError('');
+    setRequestingPart(part.partId);
+    try {
+      // PartConsumeRequest requires locationId (NotNull) + quantity
+      await axios.post(`${API}/api/v1/inventory/parts/${part.partId}/consume`, {
+        locationId: 1,
+        quantity: 1,
+      });
+      // Record locally for this session
+      const entry = { ...part, jobCardId: activeJob.jobCardId, loggedAt: new Date().toISOString(), quantity: 1 };
+      setPartsUsed(prev => [...prev, entry]);
+      // Decrement displayed stock immediately (optimistic update)
+      setPartInventory(prev => ({
+        ...prev,
+        [part.partId]: Math.max(0, (prev[part.partId] ?? 1) - 1),
+      }));
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data || 'Failed to log part usage. Please try again.';
+      setPartError(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setRequestingPart(null);
+    }
+  };
+
   const handleSignOff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeJob) return;
@@ -74,6 +119,35 @@ export default function TechnicianConsole() {
       });
       setSignOffSuccess('Job signed off! Billing invoice sent to Finance.');
       setJobs(jobs.map(j => j.jobCardId === activeJob.jobCardId ? { ...j, status: 'COMPLETED' } : j));
+      // Notify customer: service is complete — chain workOrder → appointment → customer (all non-blocking)
+      const workOrderId = activeJob.workOrderId ?? activeJob.workOrder?.woId;
+      if (workOrderId) {
+        axios.get(`${API}/api/workorders/${workOrderId}`)
+          .then(woRes => {
+            const wo = woRes.data?.data ?? woRes.data;
+            const appointmentId = wo?.appointmentId;
+            if (!appointmentId) return;
+            return axios.get(`${API}/api/appointments/${appointmentId}`)
+              .then(apptRes => {
+                const appt = apptRes.data?.data ?? apptRes.data;
+                const customerId = appt?.customerId;
+                if (!customerId) return;
+                return axios.get(`${API}/api/customers/${customerId}`)
+                  .then(custRes => {
+                    const iamUserId = custRes.data?.userId;
+                    if (!iamUserId) return;
+                    axios.post(`${API}/api/notifications`, {
+                      userId: iamUserId,
+                      customerId,           // CRM ID — customer portal queries by this
+                      channel: 'IN_APP',
+                      notificationType: 'SERVICE_COMPLETE',
+                      subject: 'Your Vehicle Service Is Complete ✅',
+                      message: `Great news! Your vehicle has been serviced and signed off by our technician. An invoice has been generated — please visit the finance desk or contact us to process payment.`,
+                    }).catch(() => {});
+                  });
+              });
+          }).catch(() => {/* non-critical */});
+      }
       setActiveJob(null);
       setTimeout(() => { setSignOffSuccess(''); setActiveTab('jobs'); }, 2000);
     } catch {
@@ -97,15 +171,23 @@ export default function TechnicianConsole() {
         .catch(() => setError('Could not load job cards.'))
         .finally(() => setLoading(false));
     } else if (activeTab === 'parts') {
-      axios.get(`${API}/api/v1/inventory/parts`)
-        .then(res => setParts(res.data))
-        .catch(() => setParts([]))
-        .finally(() => setLoading(false));
+      Promise.all([
+        axios.get(`${API}/api/v1/inventory/parts`).catch(() => ({ data: [] })),
+        axios.get(`${API}/api/v1/inventory/parts/inventory`).catch(() => ({ data: [] })),
+      ]).then(([catalogRes, inventoryRes]) => {
+        setParts(catalogRes.data || []);
+        // Build partId → quantityOnHand lookup
+        const inv: Record<number, number> = {};
+        const inventoryList: any[] = inventoryRes.data || [];
+        inventoryList.forEach((item: any) => {
+          const id = item.partId ?? item.part?.partId;
+          if (id != null) inv[id] = item.quantityOnHand ?? 0;
+        });
+        setPartInventory(inv);
+      }).finally(() => setLoading(false));
     } else if (activeTab === 'photos') {
-      axios.get(`${API}/api/service/media`)
-        .then(res => setMedia(res.data))
-        .catch(() => setMedia([]))
-        .finally(() => setLoading(false));
+      // Photos are managed locally — no backend media endpoint exists yet
+      setLoading(false);
     } else {
       setLoading(false);
     }
@@ -244,60 +326,127 @@ export default function TechnicianConsole() {
           {activeTab === 'parts' && (
             <div className="space-y-6">
               <h1 className="text-2xl font-bold text-white mb-6">Parts Repository</h1>
+
+              {partError && (
+                <div className="flex items-center p-3 bg-red-900/40 border border-red-700 rounded-lg text-red-300 text-sm">
+                  <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                  {partError}
+                  <button onClick={() => setPartError('')} className="ml-auto text-red-400 hover:text-red-200 text-xs">✕</button>
+                </div>
+              )}
+
               <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
                 <table className="min-w-full divide-y divide-gray-700">
                   <thead className="bg-gray-900">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Part</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase">Part Number</th>
+                      <th className="px-6 py-3 text-center text-xs font-medium text-gray-400 uppercase">In Stock</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-400 uppercase">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-700">
                     {loading ? (
-                      <tr><td colSpan={3} className="px-6 py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-500" /></td></tr>
+                      <tr><td colSpan={4} className="px-6 py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-500" /></td></tr>
                     ) : parts.length === 0 ? (
-                      <tr><td colSpan={3} className="px-6 py-8 text-center text-gray-500">No parts available.</td></tr>
-                    ) : parts.map((p: any) => (
-                      <tr key={p.partId} className="hover:bg-gray-750">
-                        <td className="px-6 py-4 text-sm font-medium text-white">{p.description}</td>
-                        <td className="px-6 py-4 text-sm text-gray-400">{p.partNumber}</td>
-                        <td className="px-6 py-4 text-right text-sm">
-                          <button className="bg-gray-700 text-orange-500 px-3 py-1 rounded text-xs font-bold uppercase hover:bg-gray-600">Request</button>
-                        </td>
-                      </tr>
-                    ))}
+                      <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500">No parts available.</td></tr>
+                    ) : parts.map((p: any) => {
+                      const qty = partInventory[p.partId];
+                      const outOfStock = qty === 0;
+                      return (
+                        <tr key={p.partId} className="hover:bg-gray-750">
+                          <td className="px-6 py-4 text-sm font-medium text-white">{p.description}</td>
+                          <td className="px-6 py-4 text-sm text-gray-400">{p.partNumber}</td>
+                          <td className="px-6 py-4 text-center text-sm">
+                            {qty == null ? (
+                              <span className="text-gray-600 text-xs">—</span>
+                            ) : outOfStock ? (
+                              <span className="px-2 py-0.5 bg-red-900/40 text-red-400 rounded text-xs font-bold">OUT OF STOCK</span>
+                            ) : (
+                              <span className={`font-bold ${qty <= 2 ? 'text-yellow-400' : 'text-green-400'}`}>{qty}</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right text-sm">
+                            <button
+                              disabled={requestingPart === p.partId || outOfStock}
+                              onClick={() => handleRequestPart(p)}
+                              className="bg-gray-700 text-orange-500 px-3 py-1 rounded text-xs font-bold uppercase hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {requestingPart === p.partId ? 'Logging...' : 'Log Use'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+
+              {partsUsed.length > 0 && (
+                <div className="mt-6 bg-gray-800 rounded-xl border border-gray-700 p-4">
+                  <h3 className="text-sm font-bold text-white mb-3">Parts Logged This Session</h3>
+                  <div className="space-y-2">
+                    {partsUsed.map((p, i) => (
+                      <div key={i} className="flex justify-between items-center text-sm bg-gray-900 rounded p-2">
+                        <span className="text-gray-300">{p.description} <span className="text-gray-500 text-xs">({p.partNumber})</span></span>
+                        <div className="flex items-center space-x-3">
+                          <span className="text-orange-500 font-bold">×{p.quantity}</span>
+                          <span className="text-xs text-gray-500">{new Date(p.loggedAt).toLocaleTimeString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'photos' && (
             <div className="space-y-6">
               <h1 className="text-2xl font-bold text-white mb-6">Findings & Photos</h1>
+              {/* Upload area */}
               <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 mb-6">
                 <div className="border-2 border-dashed border-gray-600 rounded-xl p-8 text-center">
                   <Camera className="w-12 h-12 text-gray-500 mx-auto mb-4" />
                   <p className="text-gray-300 font-medium mb-2">Upload inspection photos</p>
                   <p className="text-gray-500 text-sm">Snap photos of worn parts or damage to attach to the job card.</p>
-                  <button className="mt-4 bg-orange-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-orange-700">Browse Files</button>
+                  <label className="mt-4 inline-block bg-orange-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-orange-700 cursor-pointer transition-colors">
+                    Browse Files
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoSelect} />
+                  </label>
                 </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {loading ? (
-                  <p className="text-gray-500 col-span-full text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></p>
-                ) : media.length === 0 ? (
-                  <p className="text-gray-500 col-span-full text-center py-4">No photos uploaded yet.</p>
-                ) : media.map((m: any) => (
-                  <div key={m.mediaId} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-                    <div className="bg-gray-900 aspect-video rounded flex items-center justify-center mb-2">
-                      <Camera className="text-gray-700 w-8 h-8" />
-                    </div>
-                    <p className="text-xs text-gray-400 truncate">{m.filename || 'Image.jpg'}</p>
+
+              {/* Document findings (pre-fills sign-off form) */}
+              <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 className="text-white font-bold mb-3">Document Findings</h3>
+                {activeJob ? (
+                  <div className="space-y-3">
+                    <textarea
+                      placeholder="Describe what you found during inspection (worn parts, damage, issues)..."
+                      rows={4}
+                      className="w-full bg-gray-900 border border-gray-600 text-white rounded-md px-3 py-2 text-sm focus:ring-orange-500 focus:border-orange-500"
+                      onChange={e => setSignOffData(prev => ({ ...prev, findings: e.target.value }))}
+                      value={signOffData.findings}
+                    />
+                    <p className="text-xs text-gray-500">This will be pre-filled on your sign-off form.</p>
                   </div>
-                ))}
+                ) : (
+                  <p className="text-gray-500 text-sm">Clock into a job first to document findings.</p>
+                )}
               </div>
+
+              {/* Photo grid — local previews */}
+              {photoFiles.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+                  {photoFiles.map((photo, i) => (
+                    <div key={i} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+                      <img src={photo.url} alt={photo.name} className="w-full aspect-video object-cover rounded mb-2" />
+                      <p className="text-xs text-gray-400 truncate">{photo.name}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -356,7 +505,7 @@ export default function TechnicianConsole() {
           )}
 
           {activeTab === 'notifications' && (
-            <NotificationsPanel userId={user?.id ?? undefined} theme="dark" />
+            <NotificationsPanel userId={user?.id ?? undefined} theme="dark" limit={5} />
           )}
 
         </div>

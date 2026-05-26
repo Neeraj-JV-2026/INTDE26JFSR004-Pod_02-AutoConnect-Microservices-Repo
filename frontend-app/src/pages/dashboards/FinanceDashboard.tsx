@@ -32,6 +32,36 @@ export default function FinanceDashboard() {
   const [payForm, setPayForm] = useState({ paymentMethod: 'CREDIT_CARD', transactionReference: '', amount: 0 });
   const [payLoading, setPayLoading] = useState(false);
 
+  // Edit Amounts modal (for auto-generated service invoices)
+  const [editAmountsInvoice, setEditAmountsInvoice] = useState<any | null>(null);
+  const [editAmountsForm, setEditAmountsForm] = useState({ subTotal: 0, taxAmount: 0 });
+  const [editAmountsLoading, setEditAmountsLoading] = useState(false);
+
+  const openEditAmounts = (inv: any) => {
+    setEditAmountsInvoice(inv);
+    setEditAmountsForm({ subTotal: inv.subTotal || 0, taxAmount: inv.taxAmount || 0 });
+  };
+
+  const handleUpdateAmounts = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editAmountsInvoice) return;
+    setEditAmountsLoading(true);
+    try {
+      const res = await axios.patch(
+        `http://localhost:8089/api/finance/invoices/${editAmountsInvoice.invoiceId}/amounts`,
+        null,
+        { params: { subTotal: editAmountsForm.subTotal, taxAmount: editAmountsForm.taxAmount } }
+      );
+      setInvoices(prev => prev.map(i => i.invoiceId === editAmountsInvoice.invoiceId ? res.data : i));
+      setEditAmountsInvoice(null);
+      flash('success', `INV-${editAmountsInvoice.invoiceId} amounts updated. Total: $${res.data.totalAmount?.toLocaleString()}`);
+    } catch (err: any) {
+      flash('error', err?.response?.data?.message || 'Failed to update invoice amounts.');
+    } finally {
+      setEditAmountsLoading(false);
+    }
+  };
+
   const openPayModal = (inv: any) => {
     setPayModalInvoice(inv);
     setPayForm({ paymentMethod: 'CREDIT_CARD', transactionReference: '', amount: inv.totalAmount || 0 });
@@ -54,6 +84,22 @@ export default function FinanceDashboard() {
       setInvoices(invoices.map(i => i.invoiceId === payModalInvoice.invoiceId ? { ...i, status: 'PAID' } : i));
       setPayModalInvoice(null);
       flash('success', `Invoice INV-${payModalInvoice.invoiceId} marked PAID. Payment recorded.`);
+      // 3. Notify customer — resolve userId from invoice's customerId (non-blocking)
+      const customerId = payModalInvoice.customerId;
+      if (customerId) {
+        axios.get(`http://localhost:8089/api/customers/${customerId}`)
+          .then(res => {
+            const userId = res.data?.userId;
+            if (userId) {
+              axios.post('http://localhost:8089/api/notifications', {
+                userId, channel: 'IN_APP',
+                notificationType: 'PAYMENT_RECEIVED',
+                subject: 'Payment Confirmed 💳',
+                message: `Your payment of $${Number(payForm.amount).toLocaleString()} for Invoice INV-${payModalInvoice.invoiceId} has been received and confirmed. Thank you for your business!`,
+              }).catch(() => {});
+            }
+          }).catch(() => {});
+      }
     } catch (err: any) {
       flash('error', err?.response?.data?.message || 'Failed to process payment. Please try again.');
     } finally {
@@ -213,7 +259,7 @@ export default function FinanceDashboard() {
       setLoading(false);
     } else if (activeTab === 'commissions') {
       axios.get('http://localhost:8089/api/sales/commissions').then(res => setCommissions(res.data)).catch(() => setCommissions([])).finally(() => setLoading(false));
-    } else if (activeTab === 'reports' || activeTab === 'exports') {
+    } else if (activeTab === 'reports') {
       axios.get('http://localhost:8089/api/finance/reports').then(res => setReports(res.data)).catch(() => setReports([])).finally(() => setLoading(false));
     } else {
       setLoading(false);
@@ -229,7 +275,6 @@ export default function FinanceDashboard() {
     { id: 'payments', name: 'Accounts Payable', icon: CreditCard },
     { id: 'refunds', name: 'Reconciliations', icon: RefreshCcw },
     { id: 'commissions', name: 'Commission Payouts', icon: DollarSign },
-    { id: 'exports', name: 'GL Exports & Rec.', icon: Landmark },
     { id: 'reports', name: 'Financial Reports', icon: PieChart },
     { id: 'notifications', name: 'Notifications', icon: Bell },
   ];
@@ -285,6 +330,51 @@ export default function FinanceDashboard() {
                 <button type="button" onClick={() => setPayModalInvoice(null)} className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit" disabled={payLoading} className="px-6 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold disabled:opacity-50">
                   {payLoading ? <span className="flex items-center"><Loader2 className="w-4 h-4 animate-spin mr-2" />Processing...</span> : 'Confirm Payment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Amounts Modal */}
+      {editAmountsInvoice && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Edit Amounts — INV-{editAmountsInvoice.invoiceId}</h2>
+              <button onClick={() => setEditAmountsInvoice(null)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Adjust the labor and tax amounts for this service invoice. The total will be recalculated automatically.
+            </p>
+            <form onSubmit={handleUpdateAmounts} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Labor / Parts Subtotal ($)</label>
+                <input
+                  type="number" step="0.01" required min={0}
+                  value={editAmountsForm.subTotal}
+                  onChange={e => setEditAmountsForm({ ...editAmountsForm, subTotal: parseFloat(e.target.value) || 0 })}
+                  className="block w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax Amount ($)</label>
+                <input
+                  type="number" step="0.01" required min={0}
+                  value={editAmountsForm.taxAmount}
+                  onChange={e => setEditAmountsForm({ ...editAmountsForm, taxAmount: parseFloat(e.target.value) || 0 })}
+                  className="block w-full border border-gray-300 rounded-md px-4 py-2 text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Suggested: ${(editAmountsForm.subTotal * 0.1).toFixed(2)} (10%)
+                  &nbsp;·&nbsp; Total will be: <span className="font-semibold text-gray-700">${(editAmountsForm.subTotal + editAmountsForm.taxAmount).toFixed(2)}</span>
+                </p>
+              </div>
+              <div className="flex justify-end space-x-3 pt-2">
+                <button type="button" onClick={() => setEditAmountsInvoice(null)} className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={editAmountsLoading} className="px-6 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold disabled:opacity-50">
+                  {editAmountsLoading ? <span className="flex items-center"><Loader2 className="w-4 h-4 animate-spin mr-2" />Saving...</span> : 'Save Amounts'}
                 </button>
               </div>
             </form>
@@ -405,7 +495,8 @@ export default function FinanceDashboard() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice #</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client / Dept</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -413,29 +504,55 @@ export default function FinanceDashboard() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {loading ? (
-                      <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr>
+                      <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500"><Loader2 className="w-6 h-6 animate-spin mx-auto"/></td></tr>
                     ) : invoices.length === 0 ? (
-                      <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-500">No invoices found.</td></tr>
-                    ) : invoices.map(inv => (
-                      <tr key={inv.invoiceId} className="hover:bg-gray-50">
+                      <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-500">No invoices found.</td></tr>
+                    ) : invoices.map(inv => {
+                      const isServiceInvoice = inv.relatedEntityType === 'WORK_ORDER';
+                      const needsAmounts = isServiceInvoice && (!inv.totalAmount || inv.totalAmount === 0);
+                      const typeLabel = inv.relatedEntityType === 'WORK_ORDER' ? 'Service RO'
+                        : inv.relatedEntityType === 'VEHICLE' ? 'Vehicle Sale'
+                        : inv.relatedEntityType || '—';
+                      const typeColor = inv.relatedEntityType === 'WORK_ORDER' ? 'bg-blue-100 text-blue-700'
+                        : inv.relatedEntityType === 'VEHICLE' ? 'bg-purple-100 text-purple-700'
+                        : 'bg-gray-100 text-gray-600';
+                      return (
+                      <tr key={inv.invoiceId} className={`hover:bg-gray-50 ${needsAmounts ? 'bg-amber-50/40' : ''}`}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">INV-{inv.invoiceId}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {customers.find(c => c.customerId === inv.customerId)?.name || `Customer #${inv.customerId}`}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold">${inv.totalAmount?.toLocaleString()}</td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${typeColor}`}>{typeLabel}</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                          {needsAmounts
+                            ? <span className="text-amber-600 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> $0 — needs update</span>
+                            : <span className="text-gray-900">${inv.totalAmount?.toLocaleString()}</span>
+                          }
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            inv.status === 'PAID' ? 'bg-green-100 text-green-800' : 
-                            inv.status === 'ISSUED' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                            inv.status === 'PAID' ? 'bg-green-100 text-green-800' :
+                            inv.status === 'ISSUED' ? 'bg-yellow-100 text-yellow-800' :
+                            inv.status === 'OVERDUE' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
                           }`}>
                             {inv.status}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                          {isServiceInvoice && inv.status !== 'PAID' && inv.status !== 'CANCELLED' && (
+                            <button
+                              onClick={() => openEditAmounts(inv)}
+                              className="text-blue-600 hover:text-blue-800 font-medium bg-blue-50 border border-blue-200 px-3 py-1 rounded hover:bg-blue-100 text-xs"
+                            >
+                              Edit Amounts
+                            </button>
+                          )}
                           {(inv.status === 'ISSUED' || inv.status === 'PARTIAL') && (
                             <button
                               onClick={() => openPayModal(inv)}
-                              className="text-green-700 hover:text-green-900 font-bold bg-green-50 border border-green-200 px-3 py-1 rounded hover:bg-green-100"
+                              className="text-green-700 hover:text-green-900 font-bold bg-green-50 border border-green-200 px-3 py-1 rounded hover:bg-green-100 text-xs"
                             >
                               Process Payment
                             </button>
@@ -443,14 +560,15 @@ export default function FinanceDashboard() {
                           {inv.status === 'ISSUED' && (
                             <button
                               onClick={() => markOverdue(inv.invoiceId)}
-                              className="text-orange-600 hover:text-orange-900 font-medium bg-orange-50 border border-orange-200 px-3 py-1 rounded hover:bg-orange-100"
+                              className="text-orange-600 hover:text-orange-900 font-medium bg-orange-50 border border-orange-200 px-3 py-1 rounded hover:bg-orange-100 text-xs"
                             >
                               Mark Overdue
                             </button>
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -617,7 +735,7 @@ export default function FinanceDashboard() {
             <div className="space-y-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-6">Financial Reports</h1>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {['P&L Statement', 'Balance Sheet', 'Cash Flow', 'Department Margin', 'Aged Receivables', 'Tax Liability'].map((rep) => (
+                {['P&L Statement'].map((rep) => (
                   <div
                     key={rep}
                     onClick={() => generatePDF(rep)}
@@ -643,19 +761,7 @@ export default function FinanceDashboard() {
           )}
           
           {activeTab === 'notifications' && (
-            <NotificationsPanel userId={user?.id} theme="light" />
-          )}
-
-          {activeTab === 'exports' && (
-            <div className="space-y-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-6">GL Exports & Audit</h1>
-              <div className="bg-white p-12 rounded-xl shadow-sm border border-gray-200 text-center">
-                <Download className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Export to Accounting Software</h3>
-                <p className="text-gray-500 mb-6 max-w-md mx-auto">Generate a CSV or Quickbooks compatible export of all ledger entries for the selected period.</p>
-                <button className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-green-700">Export MTD Journal Entries</button>
-              </div>
-            </div>
+            <NotificationsPanel userId={user?.id} theme="light" limit={5} />
           )}
 
         </div>

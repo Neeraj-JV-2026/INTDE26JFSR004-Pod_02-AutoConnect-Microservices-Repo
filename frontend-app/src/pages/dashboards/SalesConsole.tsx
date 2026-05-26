@@ -32,6 +32,12 @@ export default function SalesConsole() {
     setTimeout(() => { setSuccessMsg(''); setErrorMsg(''); }, 4000);
   };
   
+  // Trade-in Valuation
+  const [vinInput, setVinInput] = useState('');
+  const [valuationResult, setValuationResult] = useState<any>(null);
+  const [valuationLoading, setValuationLoading] = useState(false);
+  const [valuationError, setValuationError] = useState('');
+
   // Forms
   const [showNewLeadForm, setShowNewLeadForm] = useState(false);
   const [newLeadData, setNewLeadData] = useState({ customerId: user?.id || 1, source: 'WALK_IN', interestedModel: '', status: 'NEW', notes: '' });
@@ -41,6 +47,39 @@ export default function SalesConsole() {
   const [showNewQuoteForm, setShowNewQuoteForm] = useState(false);
   const [newQuoteData, setNewQuoteData] = useState({ customerId: user?.id || 1, vehicleId: 1, taxes: 0, fees: 0 });
   const [quoteSubmitLoading, setQuoteSubmitLoading] = useState(false);
+
+  const handleVinAppraise = async () => {
+    if (!vinInput.trim()) return;
+    setValuationLoading(true);
+    setValuationError('');
+    setValuationResult(null);
+    try {
+      // Use NHTSA free VIN decode API
+      const res = await axios.get(`https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${vinInput.trim()}?format=json`);
+      const results: any[] = res.data?.Results || [];
+      const get = (varName: string) => results.find((r: any) => r.Variable === varName)?.Value || '—';
+      setValuationResult({
+        vin: vinInput.trim().toUpperCase(),
+        make: get('Make'),
+        model: get('Model'),
+        year: get('Model Year'),
+        bodyClass: get('Body Class'),
+        engineCylinders: get('Engine Number of Cylinders'),
+        fuelType: get('Fuel Type - Primary'),
+        driveType: get('Drive Type'),
+        trim: get('Trim'),
+        manufacturer: get('Manufacturer Name'),
+        // Estimate trade-in value based on year (rough heuristic)
+        estimatedTradeIn: Math.max(2000, (parseInt(get('Model Year')) || 2015) > 2020
+          ? 28000 : (parseInt(get('Model Year')) || 2015) > 2018 ? 18000
+          : (parseInt(get('Model Year')) || 2015) > 2015 ? 10000 : 5500),
+      });
+    } catch {
+      setValuationError('Could not decode VIN. Please check the VIN and try again.');
+    } finally {
+      setValuationLoading(false);
+    }
+  };
 
   const handleLeadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +95,24 @@ export default function SalesConsole() {
     } finally {
       setLeadSubmitLoading(false);
     }
+  };
+
+  /** Fire-and-forget IN_APP notification — never blocks the caller */
+  const sendNotification = async (userId: number | null | undefined, type: string, subject: string, message: string) => {
+    if (!userId) return;
+    axios.post('http://localhost:8089/api/notifications', {
+      userId, channel: 'IN_APP', notificationType: type, subject, message,
+    }).catch(() => {/* non-critical */});
+  };
+
+  /** Resolve IAM userId from CRM customerId: check local state first, then API */
+  const getIamUserId = async (customerId: number): Promise<number | null> => {
+    const local = customers.find(c => c.customerId === customerId);
+    if (local?.userId) return local.userId;
+    try {
+      const res = await axios.get(`http://localhost:8089/api/customers/${customerId}`);
+      return res.data?.userId ?? null;
+    } catch { return null; }
   };
 
   const handleQuoteSubmit = async (e: React.FormEvent) => {
@@ -77,6 +134,12 @@ export default function SalesConsole() {
       setShowNewQuoteForm(false);
       setNewQuoteData({ customerId: user?.id || 1, vehicleId: 1, taxes: 0, fees: 0 });
       showFlash('success', 'Quote generated successfully.');
+      // Notify customer
+      const uid = await getIamUserId(newQuoteData.customerId);
+      const vehicle = allVehicles.find(v => v.vehicleId === newQuoteData.vehicleId);
+      const vehicleName = vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : `Vehicle #${newQuoteData.vehicleId}`;
+      sendNotification(uid, 'GENERAL', 'Your Quote Is Ready',
+        `A sales quote has been generated for the ${vehicleName}. Total: $${generated.data?.totalPrice?.toLocaleString() ?? '—'}. Please visit the dealership or contact us to review the details.`);
     } catch (err: any) {
       showFlash('error', err?.response?.data?.message || 'Failed to generate quote.');
     } finally {
@@ -127,6 +190,19 @@ export default function SalesConsole() {
       await axios.post(`http://localhost:8089/api/sales/deals/${dealId}/finalize`);
       setDeals(deals.map(d => d.dealId === dealId ? { ...d, status: 'FINALIZED' } : d));
       showFlash('success', `Deal #${dealId} finalized! Invoice sent to Finance. Commission calculated.`);
+      // Notify customer: resolve customerId via the quote linked to this deal
+      const deal = deals.find(d => d.dealId === dealId);
+      if (deal?.quoteId) {
+        axios.get(`http://localhost:8089/api/sales/quotes/${deal.quoteId}`)
+          .then(async qRes => {
+            const customerId = qRes.data?.customerId;
+            if (customerId) {
+              const uid = await getIamUserId(customerId);
+              sendNotification(uid, 'DEAL_FINALIZED', 'Deal Finalized — Congratulations! 🎉',
+                `Your vehicle deal #${dealId} has been finalized! Our finance team will contact you shortly with payment and delivery details.`);
+            }
+          }).catch(() => {/* non-critical */});
+      }
     } catch (err: any) {
       showFlash('error', err?.response?.data?.message || 'Failed to finalize deal.');
     }
@@ -137,6 +213,10 @@ export default function SalesConsole() {
       await axios.patch(`http://localhost:8089/api/sales/test-drives/${td.id}/status?status=SCHEDULED`);
       setTestDrives(prev => prev.map(t => t.id === td.id ? { ...t, status: 'SCHEDULED' } : t));
       showFlash('success', `Test drive TD-${td.id} confirmed as Scheduled.`);
+      // Notify customer
+      const uid = await getIamUserId(td.customerId);
+      sendNotification(uid, 'APPOINTMENT_REMINDER', 'Test Drive Confirmed ✅',
+        `Great news! Your test drive request for Vehicle #${td.vehicleId} has been confirmed and scheduled. We look forward to seeing you!`);
     } catch (err: any) {
       showFlash('error', err?.response?.data?.message || 'Failed to confirm test drive.');
     }
@@ -645,23 +725,91 @@ export default function SalesConsole() {
 
           {/* NOTIFICATIONS TAB */}
           {activeTab === 'notifications' && (
-            <NotificationsPanel userId={user?.id} theme="light" />
+            <NotificationsPanel userId={user?.id} theme="light" limit={5} />
           )}
 
-          {/* VALUATION TAB (Trade-in uses test-drives endpoint as a proxy for organic interaction, or simply a mockup as requested) */}
           {activeTab === 'valuation' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-              <div className="mx-auto w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                <CarIcon className="w-8 h-8 text-gray-400" />
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-gray-900">Trade-in Valuation</h1>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <p className="text-gray-500 mb-4">Enter the customer's trade-in vehicle VIN to decode specs and get an estimated trade-in value.</p>
+                <div className="flex items-center space-x-3 max-w-xl">
+                  <input
+                    type="text"
+                    value={vinInput}
+                    onChange={e => setVinInput(e.target.value.toUpperCase())}
+                    onKeyDown={e => e.key === 'Enter' && handleVinAppraise()}
+                    placeholder="Enter 17-char VIN (e.g. 1HGCM82633A004352)"
+                    maxLength={17}
+                    className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-brand-yellow focus:border-brand-yellow sm:text-sm px-4 py-2 border font-mono uppercase"
+                  />
+                  <button
+                    onClick={handleVinAppraise}
+                    disabled={valuationLoading || vinInput.length < 11}
+                    className="bg-brand-yellow text-gray-900 px-5 py-2 rounded-lg font-medium hover:bg-yellow-400 transition-colors disabled:opacity-50 flex items-center"
+                  >
+                    {valuationLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Decoding...</> : 'Appraise'}
+                  </button>
+                </div>
+                {valuationError && <p className="text-red-600 text-sm mt-3">{valuationError}</p>}
               </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Trade-in Valuation</h2>
-              <p className="text-gray-500 max-w-md mx-auto mb-6">
-                Enter a customer's trade-in VIN to pull preliminary auction values from the backend.
-              </p>
-              <div className="max-w-md mx-auto flex items-center space-x-2">
-                <input type="text" placeholder="Enter VIN..." className="flex-1 border-gray-300 rounded-md shadow-sm focus:ring-brand-yellow focus:border-brand-yellow sm:text-sm px-4 py-2 border" />
-                <button className="bg-brand-yellow text-gray-900 px-4 py-2 rounded-lg font-medium hover:bg-yellow-400 transition-colors">Appraise</button>
-              </div>
+
+              {valuationResult && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 className="font-bold text-gray-900 text-lg mb-4">Vehicle Details</h3>
+                    <dl className="space-y-3">
+                      {[
+                        ['VIN', valuationResult.vin],
+                        ['Year / Make / Model', `${valuationResult.year} ${valuationResult.make} ${valuationResult.model}`],
+                        ['Trim', valuationResult.trim],
+                        ['Body Class', valuationResult.bodyClass],
+                        ['Engine Cylinders', valuationResult.engineCylinders],
+                        ['Fuel Type', valuationResult.fuelType],
+                        ['Drive Type', valuationResult.driveType],
+                        ['Manufacturer', valuationResult.manufacturer],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex justify-between">
+                          <dt className="text-sm text-gray-500">{label}</dt>
+                          <dd className="text-sm font-medium text-gray-900 text-right">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 className="font-bold text-gray-900 text-lg mb-4">Trade-in Estimate</h3>
+                    <div className="text-center py-6">
+                      <p className="text-5xl font-bold text-brand-yellow">${valuationResult.estimatedTradeIn.toLocaleString()}</p>
+                      <p className="text-gray-500 text-sm mt-2">Estimated trade-in value</p>
+                      <p className="text-xs text-gray-400 mt-1">Based on model year. Actual value subject to physical inspection.</p>
+                    </div>
+                    <div className="border-t border-gray-100 pt-4 grid grid-cols-3 gap-3 text-center">
+                      <div><p className="text-xs text-gray-500">Excellent</p><p className="font-bold text-green-600">${Math.round(valuationResult.estimatedTradeIn * 1.15).toLocaleString()}</p></div>
+                      <div><p className="text-xs text-gray-500">Good</p><p className="font-bold text-brand-yellow">${valuationResult.estimatedTradeIn.toLocaleString()}</p></div>
+                      <div><p className="text-xs text-gray-500">Fair</p><p className="font-bold text-red-500">${Math.round(valuationResult.estimatedTradeIn * 0.8).toLocaleString()}</p></div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const payload = {
+                          customerId: customers[0]?.customerId || 1,
+                          vehicleId: allVehicles[0]?.vehicleId || 1,
+                          taxes: { amount: 0 },
+                          fees: { amount: 0 },
+                          tradeInValue: valuationResult.estimatedTradeIn,
+                          tradeInVin: valuationResult.vin,
+                          status: 'DRAFT',
+                        };
+                        axios.post('http://localhost:8089/api/sales/quotes', payload)
+                          .then(() => showFlash('success', 'Trade-in quote created in Quote Builder.'))
+                          .catch(() => showFlash('error', 'Failed to create quote.'));
+                      }}
+                      className="mt-4 w-full bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
+                    >
+                      Create Trade-in Quote
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

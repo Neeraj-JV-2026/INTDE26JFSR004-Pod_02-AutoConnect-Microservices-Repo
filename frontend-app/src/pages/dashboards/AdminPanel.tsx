@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { ShieldAlert, Users, Tags, Gift, MapPin, Database, Car, Search, Loader2, X, CheckCircle, AlertCircle, Bell, Package, Plus, Layers } from 'lucide-react';
+import { ShieldAlert, Users, Tags, Gift, MapPin, Database, Car, Search, Loader2, X, CheckCircle, AlertCircle, Bell, Package, Plus, Layers, UserCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import NotificationsPanel from '../../components/NotificationsPanel';
 
@@ -20,6 +20,11 @@ export default function AdminPanel() {
     else { setErrorMsg(msg); setSuccessMsg(''); }
     setTimeout(() => { setSuccessMsg(''); setErrorMsg(''); }, 4000);
   };
+  const showFlash = flash;
+
+  // --- Pending Approvals tab ---
+  const [pendingUsers, setPendingUsers] = useState<any[]>([]);
+  const [approvalLoading, setApprovalLoading] = useState(false);
 
   // --- Users tab ---
   const [usersList, setUsersList] = useState<any[]>([]);
@@ -273,6 +278,13 @@ export default function AdminPanel() {
     } else if (activeTab === 'parts') {
       setLoading(false);
       fetchParts();
+    } else if (activeTab === 'approvals') {
+      setLoading(false);
+      setApprovalLoading(true);
+      axios.get(`${GW}/api/users/pending-approval`)
+        .then(res => setPendingUsers(res.data || []))
+        .catch(() => setPendingUsers([]))
+        .finally(() => setApprovalLoading(false));
     } else {
       setLoading(false);
     }
@@ -301,8 +313,30 @@ export default function AdminPanel() {
     finally { setSubmitLoading(false); }
   };
 
+  const handleApproveUser = async (userId: number, userName: string) => {
+    try {
+      await axios.post(`${GW}/api/users/${userId}/approve`);
+      setPendingUsers(prev => prev.filter(u => u.userId !== userId));
+      showFlash('success', `${userName} approved successfully.`);
+    } catch (err: any) {
+      showFlash('error', err?.response?.data?.message || 'Failed to approve user.');
+    }
+  };
+
+  const handleRejectUser = async (userId: number, userName: string) => {
+    if (!window.confirm(`Reject and delete account for ${userName}? This cannot be undone.`)) return;
+    try {
+      await axios.delete(`${GW}/api/users/${userId}`);
+      setPendingUsers(prev => prev.filter(u => u.userId !== userId));
+      showFlash('success', `${userName}'s registration rejected.`);
+    } catch (err: any) {
+      showFlash('error', err?.response?.data?.message || 'Failed to reject user.');
+    }
+  };
+
   const tabs = [
     { id: 'users', name: 'User & Role Management', icon: Users },
+    { id: 'approvals', name: 'Pending Approvals', icon: UserCheck },
     { id: 'inventory', name: 'Inventory Intake (DMS)', icon: Car },
     { id: 'pricing', name: 'Pricing Rules', icon: Tags },
     { id: 'promotions', name: 'Promotion Builder', icon: Gift },
@@ -475,6 +509,69 @@ export default function AdminPanel() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'approvals' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Pending Account Approvals</h1>
+                  <p className="text-gray-500 text-sm mt-1">Review and approve or reject new staff registrations</p>
+                </div>
+                <span className="bg-red-100 text-red-700 font-bold px-3 py-1 rounded-full text-sm">{pendingUsers.length} pending</span>
+              </div>
+              {approvalLoading ? (
+                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400"/></div>
+              ) : pendingUsers.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                  <UserCheck className="w-12 h-12 text-green-500 mx-auto mb-3"/>
+                  <p className="text-gray-500 font-medium">No pending approvals — all registrations are up to date.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role Requested</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Registered</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {pendingUsers.map((u: any) => (
+                        <tr key={u.userId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center">
+                              <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-bold text-sm mr-3">
+                                {u.name?.charAt(0)?.toUpperCase()}
+                              </div>
+                              <span className="font-medium text-gray-900">{u.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500">{u.email}</td>
+                          <td className="px-6 py-4">
+                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                              {u.role?.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-500">{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                          <td className="px-6 py-4 text-right space-x-3">
+                            <button onClick={() => handleApproveUser(u.userId, u.name)} className="bg-green-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
+                              Approve
+                            </button>
+                            <button onClick={() => handleRejectUser(u.userId, u.name)} className="bg-red-100 text-red-700 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors">
+                              Reject
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -1037,7 +1134,7 @@ export default function AdminPanel() {
           )}
 
           {activeTab === 'notifications' && (
-            <NotificationsPanel userId={user?.id} theme="light" />
+            <NotificationsPanel userId={user?.id} theme="light" limit={5} />
           )}
 
           {activeTab === 'audit' && (

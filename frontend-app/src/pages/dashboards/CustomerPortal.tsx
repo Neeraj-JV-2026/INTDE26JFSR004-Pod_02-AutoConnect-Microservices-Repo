@@ -54,8 +54,10 @@ export default function CustomerPortal() {
       .then(res => {
         const data: any[] = res.data || [];
         setAllVehicles(data);
-        const available = data.filter((v: any) => v.status !== 'SOLD');
-        if (available.length > 0) setNewAppt(prev => ({ ...prev, vehicleId: available[0].vehicleId }));
+        // For service booking the customer brings in a car they own — default to first SOLD vehicle.
+        const sold = data.filter((v: any) => v.status === 'SOLD');
+        const first = sold.length > 0 ? sold : data;
+        if (first.length > 0) setNewAppt(prev => ({ ...prev, vehicleId: first[0].vehicleId }));
       }).catch(() => {});
   }, [user?.id]);
 
@@ -310,10 +312,24 @@ export default function CustomerPortal() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
                       <SearchableSelect
-                        options={allVehicles.filter(v => v.status !== 'SOLD').map(v => ({ value: v.vehicleId, label: `${v.year} ${v.make} ${v.model}` }))}
+                        options={(() => {
+                          // Service booking = customer's own cars. SOLD = purchased by a customer.
+                          // If the vehicle record carries a customerId (owner), prefer matching ones;
+                          // otherwise show all SOLD/IN_SERVICE vehicles so the customer can pick theirs.
+                          const serviceable = allVehicles.filter(
+                            v => v.status === 'SOLD' || v.status === 'IN_SERVICE'
+                          );
+                          const owned = serviceable.filter(
+                            v => v.customerId != null && v.customerId === crmCustomerId
+                          );
+                          return (owned.length > 0 ? owned : serviceable).map(v => ({
+                            value: v.vehicleId,
+                            label: `${v.year} ${v.make} ${v.model}${v.color ? ` — ${v.color}` : ''}`,
+                          }));
+                        })()}
                         value={newAppt.vehicleId}
                         onChange={v => setNewAppt({ ...newAppt, vehicleId: v })}
-                        placeholder="Select vehicle"
+                        placeholder="Select your vehicle"
                         loadingText="Loading vehicles…"
                       />
                     </div>
@@ -419,7 +435,7 @@ export default function CustomerPortal() {
 
           {/* MESSAGES / NOTIFICATIONS TAB */}
           {activeTab === 'messages' && (
-            <NotificationsPanel userId={user?.id} theme="light" />
+            <NotificationsPanel userId={user?.id} customerId={crmCustomerId} theme="light" limit={5} />
           )}
 
         </div>

@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Calendar, CheckSquare, Settings, MessageSquare, ClipboardList, Loader2, Search, Bell } from 'lucide-react';
+import { Calendar, CheckSquare, Settings, MessageSquare, ClipboardList, Loader2, Search, Bell, RefreshCw, Send } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import SearchableSelect from '../../components/SearchableSelect';
-import NotificationsPanel from '../../components/NotificationsPanel';
 
 /** Parse a MySQL JSON column value back to a plain display string.
  *  The backend stores plain text as a JSON string literal: "\"text\""
@@ -29,6 +28,22 @@ export default function ServiceAdvisorConsole() {
   const [parts, setParts] = useState<any[]>([]);
   const [interactions, setInteractions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [newInteraction, setNewInteraction] = useState({ customerId: '', type: 'CALL', notes: '' });
+  const [interactionLoading, setInteractionLoading] = useState(false);
+  const [interactionMsg, setInteractionMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  // Comms tab — in-app messaging
+  const [selectedChatCustomer, setSelectedChatCustomer] = useState<any | null>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [chatText, setChatText] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatSending, setChatSending] = useState(false);
+  const [chatSearch, setChatSearch] = useState('');
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  // Notifications tab — top 5
+  const [notifsList, setNotifsList] = useState<any[]>([]);
+  const [notifsLoading, setNotifsLoading] = useState(false);
 
   // Reference data for smart dropdowns
   const [customers, setCustomers] = useState<any[]>([]);
@@ -45,6 +60,11 @@ export default function ServiceAdvisorConsole() {
     serviceType: 'MAINTENANCE'
   });
   const [aptSubmitLoading, setAptSubmitLoading] = useState(false);
+
+  const [intakeAppt, setIntakeAppt] = useState<any>(null);
+  const [intakeChecks, setIntakeChecks] = useState<Record<string, boolean>>({});
+  const [intakeNotes, setIntakeNotes] = useState('');
+  const [intakeSubmitting, setIntakeSubmitting] = useState(false);
 
   const [assignJobAptId, setAssignJobAptId] = useState<number | null>(null);
   // WorkOrderRequest: appointmentId, advisorId, reportedIssues, estimatedHours
@@ -78,6 +98,65 @@ export default function ServiceAdvisorConsole() {
         if (data.length > 0) setNewJobCard(prev => ({ ...prev, technicianId: data[0].userId }));
       }).catch(() => {});
   }, []);
+
+  // Load chat thread when a customer is selected in the Comms tab
+  useEffect(() => {
+    if (!selectedChatCustomer) return;
+    setChatLoading(true);
+    axios.get(`http://localhost:8089/api/notifications/customer/${selectedChatCustomer.customerId}`)
+      .then(res => {
+        const all: any[] = res.data || [];
+        // Show only advisor-sent messages in this thread
+        setChatMessages(all.filter((n: any) => n.notificationType === 'ADVISOR_MESSAGE'));
+      })
+      .catch(() => setChatMessages([]))
+      .finally(() => setChatLoading(false));
+  }, [selectedChatCustomer]);
+
+  const handleLogInteraction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInteractionLoading(true);
+    setInteractionMsg(null);
+    try {
+      const res = await axios.post('http://localhost:8089/api/interactions', {
+        customerId: Number(newInteraction.customerId),
+        type: newInteraction.type,
+        notes: newInteraction.notes,
+        advisorId: user?.id,
+      });
+      setInteractions(prev => [res.data, ...prev]);
+      setInteractionMsg({ text: 'Interaction logged successfully.', ok: true });
+      setNewInteraction({ customerId: '', type: 'CALL', notes: '' });
+    } catch {
+      setInteractionMsg({ text: 'Failed to log interaction. Please try again.', ok: false });
+    } finally {
+      setInteractionLoading(false);
+    }
+  };
+
+  /** Send an in-app message to the selected customer as an ADVISOR_MESSAGE notification */
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedChatCustomer || !chatText.trim()) return;
+    setChatSending(true);
+    setChatError(null);
+    try {
+      const res = await axios.post('http://localhost:8089/api/notifications', {
+        userId: selectedChatCustomer.userId,
+        customerId: selectedChatCustomer.customerId,
+        channel: 'IN_APP',
+        notificationType: 'ADVISOR_MESSAGE',
+        subject: 'Message from Service Advisor',
+        message: chatText.trim(),
+      });
+      setChatMessages(prev => [...prev, res.data]);
+      setChatText('');
+    } catch {
+      setChatError('Failed to send message. Please try again.');
+    } finally {
+      setChatSending(false);
+    }
+  };
 
   const handleAppointmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,6 +209,36 @@ export default function ServiceAdvisorConsole() {
       setWorkorders(prev => [...prev, workOrder]);
       setAssignJobAptId(null);
       setJobError(null);
+      // Notify customer: their vehicle has been checked in and work has started
+      const appt = appointments.find((a: any) => a.appId === assignJobAptId);
+      if (appt?.customerId) {
+        axios.get(`http://localhost:8089/api/customers/${appt.customerId}`)
+          .then(res => {
+            const iamUserId = res.data?.userId;
+            if (iamUserId) {
+              axios.post('http://localhost:8089/api/notifications', {
+                userId: iamUserId,
+                customerId: appt.customerId,   // CRM ID — lets customer find this via /customer/{id}
+                channel: 'IN_APP',
+                notificationType: 'APPOINTMENT_REMINDER',
+                subject: 'Service Work Has Begun 🔧',
+                message: `Your vehicle has been checked in and a work order has been created. A technician has been assigned and will begin work shortly. We'll notify you when the service is complete.`,
+              }).catch(() => {});
+            }
+          }).catch(() => {});
+      }
+      // Notify the advisor themselves so their Notifications tab is populated
+      if (user?.id) {
+        const customerName = customers.find((c: any) => c.customerId === appt?.customerId)?.name
+          || `Customer #${appt?.customerId}`;
+        axios.post('http://localhost:8089/api/notifications', {
+          userId: user.id,
+          channel: 'IN_APP',
+          notificationType: 'JOB_ASSIGNED',
+          subject: `Job Card Created — Apt #${assignJobAptId}`,
+          message: `Work order created for ${customerName}. Technician assigned. Est. ${newJobCard.estimatedHours} hrs.`,
+        }).catch(() => {});
+      }
     } catch (err: any) {
       setJobError(err?.response?.data?.message || err?.message || 'Failed to assign technician. Check the technician ID and try again.');
     } finally {
@@ -150,11 +259,33 @@ export default function ServiceAdvisorConsole() {
     } else if (activeTab === 'parts') {
       axios.get('http://localhost:8089/api/v1/inventory/parts').then(res => setParts(res.data)).catch(() => setParts([])).finally(() => setLoading(false));
     } else if (activeTab === 'comms') {
-      axios.get('http://localhost:8089/api/interactions').then(res => setInteractions(res.data)).finally(() => setLoading(false));
+      // customers already loaded on mount; no additional fetch needed
+      setLoading(false);
+    } else if (activeTab === 'notifications') {
+      if (user?.id) {
+        setNotifsLoading(true);
+        axios.get(`http://localhost:8089/api/notifications/user/${user.id}`)
+          .then(res => setNotifsList((res.data || []).slice(0, 5)))
+          .catch(() => setNotifsList([]))
+          .finally(() => { setNotifsLoading(false); setLoading(false); });
+      } else {
+        setLoading(false);
+      }
     } else {
       setLoading(false);
     }
   }, [activeTab]);
+
+  const INTAKE_CHECKLIST = [
+    'Verify customer ID and contact details',
+    'Check vehicle odometer reading',
+    'Inspect exterior for pre-existing damage',
+    'Inspect interior condition',
+    'Check fuel level',
+    'Verify all keys / key fobs present',
+    'Customer signature on intake form obtained',
+    'Vehicle photos taken',
+  ];
 
   const tabs = [
     { id: 'calendar', name: 'Appointment Calendar', icon: Calendar },
@@ -290,8 +421,14 @@ export default function ServiceAdvisorConsole() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex space-x-3">
+                      <div className="flex space-x-3 flex-col items-end gap-2">
                         <button onClick={() => { setAssignJobAptId(apt.appId); setJobError(null); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">Assign Tech</button>
+                        <button
+                          onClick={() => { setIntakeAppt(apt); setIntakeChecks({}); setIntakeNotes(''); }}
+                          className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded font-medium hover:bg-blue-700"
+                        >
+                          Vehicle Intake
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -378,27 +515,333 @@ export default function ServiceAdvisorConsole() {
             </div>
           )}
 
-          {/* NOTIFICATIONS TAB */}
+          {/* NOTIFICATIONS TAB — top 5 from DB */}
           {activeTab === 'notifications' && (
-            <NotificationsPanel userId={user?.id} theme="light" />
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900">Notifications</h1>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {notifsList.filter(n => n.status !== 'READ').length > 0
+                      ? `${notifsList.filter(n => n.status !== 'READ').length} unread`
+                      : 'All caught up'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {notifsList.some(n => n.status !== 'READ') && (
+                    <button
+                      onClick={() => {
+                        notifsList.filter(n => n.status !== 'READ').forEach(n =>
+                          axios.patch(`http://localhost:8089/api/notifications/${n.notificationId}/read`).catch(() => {})
+                        );
+                        setNotifsList(p => p.map(n => ({ ...n, status: 'READ' })));
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+                    >
+                      ✓✓ Mark all read
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (!user?.id) return;
+                      setNotifsLoading(true);
+                      axios.get(`http://localhost:8089/api/notifications/user/${user.id}`)
+                        .then(res => setNotifsList((res.data || []).slice(0, 5)))
+                        .catch(() => setNotifsList([]))
+                        .finally(() => setNotifsLoading(false));
+                    }}
+                    className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1.5"
+                  >
+                    <RefreshCw size={13} className={notifsLoading ? 'animate-spin' : ''} /> Refresh
+                  </button>
+                </div>
+              </div>
+
+              {notifsLoading ? (
+                <div className="flex justify-center py-20">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+                </div>
+              ) : notifsList.length === 0 ? (
+                <div className="text-center py-20 bg-white rounded-xl border border-slate-200">
+                  <Bell className="w-14 h-14 mx-auto mb-3 text-slate-200" />
+                  <p className="font-medium text-slate-500">No notifications yet</p>
+                  <p className="text-sm text-slate-400 mt-1">Notifications appear here when you assign job cards, appointments are updated, or customers send messages.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {notifsList.map((n: any) => {
+                    const TYPE_COLOUR: Record<string, string> = {
+                      JOB_ASSIGNED:         'bg-orange-100 text-orange-700 border-orange-200',
+                      APPOINTMENT_REMINDER: 'bg-blue-100 text-blue-700 border-blue-200',
+                      SERVICE_COMPLETE:     'bg-purple-100 text-purple-700 border-purple-200',
+                      ADVISOR_MESSAGE:      'bg-teal-100 text-teal-700 border-teal-200',
+                      INVOICE_ISSUED:       'bg-green-100 text-green-700 border-green-200',
+                      DEAL_FINALIZED:       'bg-emerald-100 text-emerald-700 border-emerald-200',
+                      INVOICE_OVERDUE:      'bg-red-100 text-red-700 border-red-200',
+                    };
+                    const CHANNEL_ICON: Record<string, string> = { EMAIL: '✉️', SMS: '📱', PUSH: '🔔', IN_APP: '💬' };
+                    return (
+                      <div
+                        key={n.notificationId}
+                        className={`rounded-xl p-4 border transition-colors ${
+                          n.status !== 'READ' ? 'bg-blue-50 border-blue-100' : 'bg-white border-slate-100'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-base">{CHANNEL_ICON[n.channel] ?? '🔔'}</span>
+                              {n.subject && (
+                                <p className="text-sm font-semibold text-slate-900 truncate">{n.subject}</p>
+                              )}
+                              {n.status !== 'READ' && (
+                                <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-sm text-slate-700 leading-relaxed">{n.message}</p>
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
+                              <span className="text-xs text-slate-400">
+                                {new Date(n.createdAt).toLocaleString()}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${
+                                TYPE_COLOUR[n.notificationType] ?? 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}>
+                                {n.notificationType.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                          </div>
+                          {n.status !== 'READ' && (
+                            <button
+                              onClick={() => {
+                                axios.patch(`http://localhost:8089/api/notifications/${n.notificationId}/read`).catch(() => {});
+                                setNotifsList(p => p.map(x => x.notificationId === n.notificationId ? { ...x, status: 'READ' } : x));
+                              }}
+                              className="shrink-0 text-xs text-blue-500 hover:text-blue-700 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors whitespace-nowrap"
+                            >
+                              ✓ Mark read
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-xs text-center text-slate-400">
+                    Showing {notifsList.length} most recent notification{notifsList.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* COMMS TAB */}
+          {/* COMMS TAB — In-App Messaging */}
           {activeTab === 'comms' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold text-slate-900">Customer Interactions</h1>
-              </div>
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                {loading ? <Loader2 className="w-8 h-8 animate-spin mx-auto text-slate-400"/> : 
-                 interactions.length === 0 ? <p className="text-slate-500 text-center py-4">No recent customer interactions.</p> :
-                 interactions.map((i: any) => (
-                  <div key={i.interactionId} className="border-b border-slate-100 last:border-0 py-4">
-                    <p className="font-bold text-slate-900">Interaction #{i.interactionId} - Customer {i.customerId}</p>
-                    <p className="text-sm text-slate-500">{i.notes || 'No notes available.'}</p>
-                    <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded mt-2 inline-block">{i.type || 'CONTACT'}</span>
+            <div className="flex flex-col" style={{ height: 'calc(100vh - 160px)' }}>
+              <h1 className="text-2xl font-bold text-slate-900 mb-4">Customer Messaging</h1>
+              <div className="flex flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-0">
+
+                {/* ── Left panel: customer list ── */}
+                <div className="w-72 border-r border-slate-200 flex flex-col flex-shrink-0">
+                  <div className="p-3 border-b border-slate-100 bg-slate-50">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search customers..."
+                        value={chatSearch}
+                        onChange={e => setChatSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
                   </div>
-                 ))}
+                  <div className="overflow-y-auto flex-1">
+                    {customers
+                      .filter(c => !chatSearch || c.name?.toLowerCase().includes(chatSearch.toLowerCase()))
+                      .map((c: any) => (
+                        <button
+                          key={c.customerId}
+                          onClick={() => { setSelectedChatCustomer(c); setChatError(null); }}
+                          className={`w-full text-left px-4 py-3 border-b border-slate-50 transition-colors ${
+                            selectedChatCustomer?.customerId === c.customerId
+                              ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                              : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                              {c.name?.[0]?.toUpperCase() || '?'}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate">{c.name}</p>
+                              <p className="text-xs text-slate-400 truncate">{c.contactInfo || 'No contact info'}</p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    {customers.length === 0 && (
+                      <div className="p-4 text-center text-slate-400 text-sm py-10">No customers found.</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Right panel: chat ── */}
+                {selectedChatCustomer ? (
+                  <div className="flex-1 flex flex-col min-w-0">
+
+                    {/* Chat header */}
+                    <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-3 flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-sm font-bold text-white">
+                        {selectedChatCustomer.name?.[0]?.toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-900">{selectedChatCustomer.name}</p>
+                        <p className="text-xs text-slate-500 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                          In-app messaging · delivered as notification
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Message thread */}
+                    <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50/50">
+                      {chatLoading ? (
+                        <div className="flex justify-center py-10">
+                          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                        </div>
+                      ) : chatMessages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center py-16">
+                          <MessageSquare className="w-14 h-14 text-slate-200 mb-3" />
+                          <p className="text-slate-500 font-medium">No messages yet</p>
+                          <p className="text-slate-400 text-sm mt-1">
+                            Send a message below — it will appear in the customer's notifications.
+                          </p>
+                        </div>
+                      ) : (
+                        chatMessages.map((msg: any) => (
+                          <div key={msg.notificationId} className="flex justify-end">
+                            <div className="max-w-[72%]">
+                              <div className="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm shadow-sm leading-relaxed">
+                                {msg.message}
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-1 text-right flex items-center justify-end gap-1">
+                                {new Date(msg.createdAt).toLocaleString([], {
+                                  month: 'short', day: 'numeric',
+                                  hour: '2-digit', minute: '2-digit',
+                                })}
+                                {msg.status === 'READ'
+                                  ? <span className="text-blue-500">✓✓</span>
+                                  : <span className="text-slate-300">✓</span>}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Message input */}
+                    <div className="p-4 border-t border-slate-200 bg-white flex-shrink-0">
+                      {chatError && (
+                        <p className="text-xs text-red-600 mb-2 px-1">{chatError}</p>
+                      )}
+                      <form onSubmit={handleSendMessage} className="flex gap-2 items-end">
+                        <textarea
+                          rows={2}
+                          value={chatText}
+                          onChange={e => setChatText(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage(e as any);
+                            }
+                          }}
+                          placeholder={`Message ${selectedChatCustomer.name}… (Enter to send, Shift+Enter for new line)`}
+                          className="flex-1 resize-none border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-slate-50"
+                        />
+                        <button
+                          type="submit"
+                          disabled={chatSending || !chatText.trim()}
+                          className="px-4 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 text-sm flex-shrink-0"
+                        >
+                          {chatSending
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : <Send className="w-4 h-4" />}
+                          Send
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center bg-slate-50/50">
+                    <div className="text-center">
+                      <MessageSquare className="w-16 h-16 text-slate-200 mx-auto mb-4" />
+                      <p className="text-slate-500 font-semibold">Select a customer to start messaging</p>
+                      <p className="text-slate-400 text-sm mt-1">Messages are delivered as in-app notifications</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {intakeAppt && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-gray-900">Vehicle Intake Checklist</h2>
+                    <button onClick={() => setIntakeAppt(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">Appointment #{intakeAppt.appId} — {intakeAppt.serviceType}</p>
+                </div>
+                <div className="p-6 space-y-3">
+                  {INTAKE_CHECKLIST.map((item, i) => (
+                    <label key={i} className="flex items-center space-x-3 cursor-pointer p-2 rounded hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={!!intakeChecks[item]}
+                        onChange={e => setIntakeChecks(prev => ({ ...prev, [item]: e.target.checked }))}
+                        className="w-5 h-5 rounded text-blue-600"
+                      />
+                      <span className={`text-sm ${intakeChecks[item] ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item}</span>
+                    </label>
+                  ))}
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
+                    <textarea
+                      value={intakeNotes}
+                      onChange={e => setIntakeNotes(e.target.value)}
+                      rows={3}
+                      placeholder="Any visible damage, customer concerns, special instructions..."
+                      className="w-full border-gray-300 rounded-md shadow-sm px-3 py-2 text-sm border focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="p-6 border-t border-gray-200 flex justify-between items-center">
+                  <span className="text-sm text-gray-500">
+                    {Object.values(intakeChecks).filter(Boolean).length}/{INTAKE_CHECKLIST.length} items checked
+                  </span>
+                  <div className="flex space-x-3">
+                    <button onClick={() => setIntakeAppt(null)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button
+                      disabled={intakeSubmitting}
+                      onClick={async () => {
+                        setIntakeSubmitting(true);
+                        try {
+                          // Save intake notes as a job note (use appointment update or a comment endpoint)
+                          await axios.put(`http://localhost:8089/api/appointments/${intakeAppt.appId}`, {
+                            ...intakeAppt,
+                            notes: `INTAKE: ${intakeNotes} | Checks: ${Object.entries(intakeChecks).filter(([,v]) => v).map(([k]) => k).join('; ')}`,
+                          });
+                        } catch { /* non-critical */ } finally {
+                          setIntakeSubmitting(false);
+                          setIntakeAppt(null);
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {intakeSubmitting ? 'Saving...' : 'Complete Intake'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

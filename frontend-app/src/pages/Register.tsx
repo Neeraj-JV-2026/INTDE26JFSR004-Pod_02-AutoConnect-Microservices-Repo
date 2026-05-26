@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { Clock } from 'lucide-react';
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -12,6 +13,7 @@ export default function Register() {
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -24,12 +26,38 @@ export default function Register() {
     
     try {
       await axios.post('http://localhost:8089/api/auth/register', formData);
-      setSuccess(true);
-      setTimeout(() => navigate('/login'), 2000);
+      const { role } = formData;
+      if (role !== 'CUSTOMER' && role !== 'ADMIN') {
+        // Non-customer roles need approval
+        setPendingApproval(true);
+      } else {
+        setSuccess(true);
+        setTimeout(() => navigate('/login'), 2000);
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || err.response?.data?.error || 'Failed to register. Please try again.');
     }
   };
+
+  if (pendingApproval) {
+    return (
+      <div className="min-h-[calc(100vh-104px)] bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 text-center">
+            <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Clock className="w-8 h-8 text-yellow-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Registration Submitted</h2>
+            <p className="text-gray-600 mb-6">Your account is pending admin approval. You'll be able to log in once an administrator reviews and approves your account.</p>
+            <p className="text-sm text-gray-500 mb-4">Role requested: <span className="font-semibold">{formData.role.replace(/_/g, ' ')}</span></p>
+            <Link to="/login" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-900 hover:bg-gray-700 transition-colors">
+              Back to Login
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-104px)] bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -48,9 +76,15 @@ export default function Register() {
           ) : (
             <form className="space-y-6" onSubmit={handleSubmit}>
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded text-sm">
-                  {error}
-                </div>
+                error.toLowerCase().includes('pending admin approval') ? (
+                  <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded text-sm">
+                    {error}
+                  </div>
+                ) : (
+                  <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded text-sm">
+                    {error}
+                  </div>
+                )
               )}
               
               <div>

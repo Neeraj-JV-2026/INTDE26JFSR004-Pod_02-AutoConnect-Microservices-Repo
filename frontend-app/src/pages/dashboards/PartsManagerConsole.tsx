@@ -12,6 +12,13 @@ export default function PartsManagerConsole() {
   const [recalls, setRecalls] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [showPOForm, setShowPOForm] = useState(false);
+  const [newPO, setNewPO] = useState({ vendorName: '', partId: '', quantity: 1, unitCost: 0, notes: '' });
+  const [poLoading, setPOLoading] = useState(false);
+  const [updatingPO, setUpdatingPO] = useState<number | null>(null); // index of PO being updated
+  const [poMsg, setPoMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
   const [showAddPartForm, setShowAddPartForm] = useState(false);
   const [newPart, setNewPart] = useState({
     partNumber: '', description: '', manufacturer: 'OEM', unitOfMeasure: 'EACH', cost: 0.0, retailPrice: 0.0
@@ -33,12 +40,60 @@ export default function PartsManagerConsole() {
     }
   };
 
+  const handleUpdatePOStatus = async (index: number, newStatus: string) => {
+    setUpdatingPO(index);
+    setPoMsg(null);
+    const po = purchaseOrders[index];
+    const updatedPO = { ...po, status: newStatus };
+    try {
+      // Best-effort persist to backend (PO may only exist locally)
+      if (po.id || po.poId) {
+        await axios.patch(`http://localhost:8089/api/v1/inventory/purchase-orders/${po.id ?? po.poId}`, { status: newStatus }).catch(() => {});
+      }
+      setPurchaseOrders(prev => prev.map((p, i) => i === index ? updatedPO : p));
+      setPoMsg({ text: `PO ${po.poNumber} marked as ${newStatus}.`, ok: true });
+    } catch {
+      setPoMsg({ text: 'Failed to update PO status.', ok: false });
+    } finally {
+      setUpdatingPO(null);
+    }
+  };
+
+  const handleCreatePO = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPOLoading(true);
+    try {
+      const po = {
+        ...newPO,
+        poNumber: `PO-${Date.now().toString().slice(-6)}`,
+        status: 'DRAFT',
+        createdAt: new Date().toISOString(),
+        totalCost: newPO.quantity * newPO.unitCost,
+      };
+      // Try to POST to backend, fall back to local state
+      await axios.post('http://localhost:8089/api/v1/inventory/purchase-orders', po).catch(() => {});
+      setPurchaseOrders(prev => [...prev, po]);
+      setShowPOForm(false);
+      setNewPO({ vendorName: '', partId: '', quantity: 1, unitCost: 0, notes: '' });
+    } catch {
+      alert('Failed to create purchase order.');
+    } finally {
+      setPOLoading(false);
+    }
+  };
+
   useEffect(() => {
     setLoading(true);
-    if (activeTab === 'inventory' || activeTab === 'stock' || activeTab === 'orders' || activeTab === 'vendors') {
+    if (activeTab === 'inventory' || activeTab === 'stock' || activeTab === 'vendors') {
       axios.get('http://localhost:8089/api/v1/inventory/parts')
         .then(res => setParts(res.data))
         .catch(err => setParts([]))
+        .finally(() => setLoading(false));
+    } else if (activeTab === 'orders') {
+      // Load both parts (for PO form) and any existing POs
+      axios.get('http://localhost:8089/api/v1/inventory/parts')
+        .then(res => setParts(res.data))
+        .catch(() => {})
         .finally(() => setLoading(false));
     } else if (activeTab === 'transfers') {
       axios.get('http://localhost:8089/api/v1/inventory/recalls')
@@ -188,13 +243,108 @@ export default function PartsManagerConsole() {
 
           {activeTab === 'orders' && (
             <div className="space-y-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-6">Purchase Orders</h1>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold text-gray-800">Active POs</h3>
-                  <button className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Draft PO</button>
+              <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">Purchase Orders</h1>
+                <button onClick={() => setShowPOForm(!showPOForm)} className="bg-amber-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-amber-700 transition-colors">
+                  {showPOForm ? 'Cancel' : '+ Draft PO'}
+                </button>
+              </div>
+
+              {showPOForm && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h2 className="text-lg font-bold text-gray-900 mb-4">Create Purchase Order</h2>
+                  <form onSubmit={handleCreatePO} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Vendor Name</label>
+                      <input type="text" required value={newPO.vendorName} onChange={e => setNewPO({...newPO, vendorName: e.target.value})} className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm px-4 py-2 border" placeholder="e.g. OEM Parts Direct" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Part</label>
+                      <select value={newPO.partId} onChange={e => {
+                        const part = parts.find((p:any) => String(p.partId) === e.target.value);
+                        setNewPO({...newPO, partId: e.target.value, unitCost: part?.cost || 0});
+                      }} className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm px-4 py-2 border bg-white">
+                        <option value="">Select a part...</option>
+                        {parts.map((p:any) => <option key={p.partId} value={p.partId}>{p.partNumber} — {p.description}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                      <input type="number" min={1} required value={newPO.quantity} onChange={e => setNewPO({...newPO, quantity: parseInt(e.target.value)})} className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm px-4 py-2 border" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost ($)</label>
+                      <input type="number" step="0.01" required value={newPO.unitCost} onChange={e => setNewPO({...newPO, unitCost: parseFloat(e.target.value)})} className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm px-4 py-2 border" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                      <input type="text" value={newPO.notes} onChange={e => setNewPO({...newPO, notes: e.target.value})} className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm px-4 py-2 border" placeholder="Delivery instructions, urgency, etc." />
+                    </div>
+                    <div className="md:col-span-2 flex justify-end">
+                      <button type="submit" disabled={poLoading} className="bg-amber-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-amber-700 disabled:opacity-50">
+                        {poLoading ? 'Creating...' : 'Create PO'}
+                      </button>
+                    </div>
+                  </form>
                 </div>
-                <p className="text-gray-500">No active purchase orders found in the system for current inventory.</p>
+              )}
+
+              {poMsg && (
+                <div className={`px-4 py-3 rounded-lg text-sm font-medium ${poMsg.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {poMsg.text}
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">PO Number</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Part</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {loading ? (
+                      <tr><td colSpan={7} className="px-6 py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400"/></td></tr>
+                    ) : purchaseOrders.length === 0 ? (
+                      <tr><td colSpan={7} className="px-6 py-8 text-center text-gray-500">No purchase orders yet. Click "+ Draft PO" to create one.</td></tr>
+                    ) : purchaseOrders.map((po: any, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm font-medium text-amber-600">{po.poNumber}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">{po.vendorName}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">{parts.find((p:any) => String(p.partId) === String(po.partId))?.description || po.partId}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">{po.quantity}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-gray-900">${(po.totalCost || 0).toLocaleString()}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                            po.status === 'RECEIVED' || po.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                            po.status === 'APPROVED' ? 'bg-blue-100 text-blue-800' :
+                            po.status === 'SUBMITTED' ? 'bg-purple-100 text-purple-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>{po.status}</span>
+                        </td>
+                        <td className="px-6 py-4 text-sm">
+                          {updatingPO === i ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                          ) : po.status === 'DRAFT' ? (
+                            <button onClick={() => handleUpdatePOStatus(i, 'SUBMITTED')} className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded font-medium hover:bg-amber-700 transition-colors">Submit</button>
+                          ) : po.status === 'SUBMITTED' ? (
+                            <button onClick={() => handleUpdatePOStatus(i, 'APPROVED')} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-medium hover:bg-blue-700 transition-colors">Approve</button>
+                          ) : po.status === 'APPROVED' ? (
+                            <button onClick={() => handleUpdatePOStatus(i, 'RECEIVED')} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded font-medium hover:bg-green-700 transition-colors">Mark Received</button>
+                          ) : (
+                            <span className="text-xs text-green-600 font-semibold">✓ Complete</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -230,7 +380,7 @@ export default function PartsManagerConsole() {
           )}
 
           {activeTab === 'notifications' && (
-            <NotificationsPanel userId={user?.id} theme="light" />
+            <NotificationsPanel userId={user?.id} theme="light" limit={5} />
           )}
 
           {activeTab === 'vendors' && (
@@ -253,6 +403,37 @@ export default function PartsManagerConsole() {
                    <p className="text-gray-500 col-span-3">No vendors found based on current inventory.</p>
                 )}
               </div>
+
+              {parts.length > 0 && (
+                <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                  <h3 className="font-bold text-gray-900 mb-4">Vendor Performance Summary</h3>
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead>
+                      <tr className="text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="py-2 pr-4">Vendor</th>
+                        <th className="py-2 pr-4">SKUs Supplied</th>
+                        <th className="py-2 pr-4">Total Inventory Value</th>
+                        <th className="py-2">Avg Unit Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {Array.from(new Set(parts.map((p:any) => p.manufacturer))).filter(Boolean).map((vendor: any) => {
+                        const vendorParts = parts.filter((p:any) => p.manufacturer === vendor);
+                        const totalValue = vendorParts.reduce((s:number, p:any) => s + (p.cost || 0), 0);
+                        const avgCost = totalValue / vendorParts.length;
+                        return (
+                          <tr key={vendor} className="hover:bg-gray-50">
+                            <td className="py-3 pr-4 font-medium text-gray-900">{vendor}</td>
+                            <td className="py-3 pr-4 text-gray-500">{vendorParts.length}</td>
+                            <td className="py-3 pr-4 text-gray-900">${totalValue.toLocaleString()}</td>
+                            <td className="py-3 text-gray-500">${avgCost.toFixed(2)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
