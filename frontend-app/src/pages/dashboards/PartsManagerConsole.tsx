@@ -351,30 +351,56 @@ export default function PartsManagerConsole() {
 
           {activeTab === 'transfers' && (
             <div className="space-y-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-6">Recalls & Returns</h1>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Recall ID</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle/Part</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {loading ? (
-                      <tr><td colSpan={3} className="px-6 py-8 text-center"><Loader2 className="w-6 h-6 animate-spin mx-auto text-gray-400"/></td></tr>
-                    ) : recalls.length === 0 ? (
-                      <tr><td colSpan={3} className="px-6 py-8 text-center text-gray-500">No active recalls or returns.</td></tr>
-                    ) : recalls.map((r: any) => (
-                      <tr key={r.recallId} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.recallNumber || r.recallId}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.affectedPart}</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">{r.description}</td>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Recalls & Returns</h1>
+                <p className="text-sm text-gray-500 mt-1">Read-only view of active vehicle recalls. Recalls are issued by Admin; returns are processed via Finance.</p>
+              </div>
+
+              {loading ? (
+                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-gray-400"/></div>
+              ) : recalls.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                  <ArrowLeftRight className="w-12 h-12 text-gray-200 mx-auto mb-3"/>
+                  <p className="text-gray-500">No recalls on record.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recall #</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Affected Models</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remedy</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {recalls.map((r: any) => (
+                        <tr key={r.recallId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.recallNumber || `#${r.recallId}`}</td>
+                          <td className="px-6 py-4 text-sm text-gray-700 max-w-xs" title={r.affectedModels}>{r.affectedModels || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title={r.description}>{r.description || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title={r.remedyDescription}>{r.remedyDescription || '—'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.issueDate || '—'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              r.status === 'ACTIVE'    ? 'bg-red-100 text-red-800' :
+                              r.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>{r.status || 'ACTIVE'}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                <strong>Parts affected by recalls:</strong> Check the affected models above and ensure any parts earmarked for recalled vehicles are flagged in your inventory.
+                Contact the service team to coordinate recall repair work orders.
               </div>
             </div>
           )}

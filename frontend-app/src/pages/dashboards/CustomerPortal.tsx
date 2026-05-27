@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Car, FileText, Calendar, Clock, Shield, Loader2, AlertCircle, CheckCircle, Bell } from 'lucide-react';
+import { Car, FileText, Calendar, Clock, Shield, Loader2, AlertCircle, CheckCircle, Bell, Send, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import SearchableSelect from '../../components/SearchableSelect';
 import NotificationsPanel from '../../components/NotificationsPanel';
@@ -29,7 +29,16 @@ export default function CustomerPortal() {
   // Warranty claim form
   const [claimWarrantyId, setClaimWarrantyId] = useState<number | null>(null);
   const [claimDescription, setClaimDescription] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
   const [claimLoading, setClaimLoading] = useState(false);
+
+  // Messaging (Messages tab)
+  const [advisors, setAdvisors] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageText, setMessageText] = useState('');
+  const [selectedAdvisorId, setSelectedAdvisorId] = useState<number | null>(null);
+  const [messageSending, setMessageSending] = useState(false);
 
   const handleSubmitClaim = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,13 +46,14 @@ export default function CustomerPortal() {
     setClaimLoading(true);
     try {
       await axios.post(`${API}/api/v1/warranties/claims`, {
-        warrantyId: claimWarrantyId,
-        customerId: crmCustomerId,
-        description: claimDescription,
+        warrantyId:       claimWarrantyId,
+        claimDescription: claimDescription,   // matches @NotBlank field name
+        claimAmount:      parseFloat(claimAmount) || 0,  // matches @NotNull field name
       });
-      showSuccess('Warranty claim submitted successfully. We will review it shortly.');
+      showSuccess('Warranty claim submitted successfully. A service advisor will review it shortly.');
       setClaimWarrantyId(null);
       setClaimDescription('');
+      setClaimAmount('');
     } catch {
       setError('Failed to submit warranty claim. Please try again.');
     } finally {
@@ -131,10 +141,55 @@ export default function CustomerPortal() {
         setWarranties(crmCustomerId ? all.filter(w => w.customerId === crmCustomerId) : all);
         setActiveRecalls(Array.isArray(recallRes.data) ? recallRes.data : []);
       }).finally(() => setLoading(false));
+    } else if (activeTab === 'messages') {
+      setMessagesLoading(true);
+      Promise.all([
+        // Load received messages for this customer
+        user?.id
+          ? axios.get(`${API}/api/notifications/user/${user.id}`).catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] }),
+        // Load available service advisors for the compose form
+        axios.get(`${API}/api/users/by-role?role=SERVICE_ADVISOR`).catch(() => ({ data: [] })),
+      ]).then(([msgRes, advisorRes]) => {
+        const all: any[] = Array.isArray(msgRes.data) ? msgRes.data : [];
+        // Show advisor messages and general notifications
+        setMessages(all.filter((n: any) => ['ADVISOR_MESSAGE', 'GENERAL', 'APPOINTMENT_REMINDER', 'DEAL_FINALIZED', 'JOB_ASSIGNED'].includes(n.notificationType)));
+        const advisorList: any[] = Array.isArray(advisorRes.data) ? advisorRes.data : [];
+        setAdvisors(advisorList);
+        if (advisorList.length > 0 && !selectedAdvisorId) {
+          setSelectedAdvisorId(advisorList[0].userId);
+        }
+      }).finally(() => { setMessagesLoading(false); setLoading(false); });
     } else {
       setLoading(false);
     }
   }, [activeTab, crmCustomerId]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!messageText.trim() || !selectedAdvisorId) return;
+    setMessageSending(true);
+    try {
+      // Post to the advisor's notification inbox
+      const res = await axios.post(`${API}/api/notifications`, {
+        userId:           selectedAdvisorId,
+        customerId:       crmCustomerId,
+        channel:          'IN_APP',
+        notificationType: 'ADVISOR_MESSAGE',
+        subject:          `Message from ${user?.name || 'Customer'}`,
+        message:          messageText.trim(),
+      });
+      // Also add to local message list so user sees it immediately
+      setMessages(prev => [{ ...res.data, _sent: true }, ...prev]);
+      setMessageText('');
+      showSuccess('Message sent to service team.');
+    } catch {
+      setError('Failed to send message. Please try again.');
+      setTimeout(() => setError(''), 3000);
+    } finally {
+      setMessageSending(false);
+    }
+  };
 
   const handleApptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -502,11 +557,21 @@ export default function CustomerPortal() {
                                       rows={2}
                                       className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 resize-none"
                                     />
+                                    <input
+                                      required
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={claimAmount}
+                                      onChange={e => setClaimAmount(e.target.value)}
+                                      placeholder="Estimated repair cost ($)"
+                                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5"
+                                    />
                                     <div className="flex gap-2">
                                       <button type="submit" disabled={claimLoading} className="flex-1 text-xs bg-brand-yellow text-gray-900 py-1.5 rounded font-medium hover:bg-yellow-400 disabled:opacity-50">
                                         {claimLoading ? 'Submitting...' : 'Submit Claim'}
                                       </button>
-                                      <button type="button" onClick={() => { setClaimWarrantyId(null); setClaimDescription(''); }} className="text-xs text-gray-500 hover:text-gray-700 px-2">
+                                      <button type="button" onClick={() => { setClaimWarrantyId(null); setClaimDescription(''); setClaimAmount(''); }} className="text-xs text-gray-500 hover:text-gray-700 px-2">
                                         Cancel
                                       </button>
                                     </div>
@@ -532,7 +597,95 @@ export default function CustomerPortal() {
 
           {/* MESSAGES / NOTIFICATIONS TAB */}
           {activeTab === 'messages' && (
-            <NotificationsPanel userId={user?.id} customerId={crmCustomerId} theme="light" limit={5} />
+            <div className="space-y-6">
+              <h1 className="text-2xl font-bold text-gray-900">Messages</h1>
+
+              {/* Compose form */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <Send className="w-4 h-4 text-brand-yellow" /> Send a Message to Service Team
+                </h3>
+                {advisors.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">No service advisors available at the moment.</p>
+                ) : (
+                  <form onSubmit={handleSendMessage} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Send to</label>
+                      <select
+                        value={selectedAdvisorId ?? ''}
+                        onChange={e => setSelectedAdvisorId(Number(e.target.value))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-brand-yellow focus:border-brand-yellow outline-none"
+                      >
+                        {advisors.map((a: any) => (
+                          <option key={a.userId} value={a.userId}>{a.name} — Service Advisor</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Message</label>
+                      <textarea
+                        required
+                        value={messageText}
+                        onChange={e => setMessageText(e.target.value)}
+                        rows={3}
+                        placeholder="Type your message here… e.g. asking about your vehicle status, appointment query, etc."
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:ring-brand-yellow focus:border-brand-yellow outline-none"
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={messageSending || !messageText.trim()}
+                        className="bg-gray-900 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {messageSending ? <><Loader2 className="w-4 h-4 animate-spin"/>Sending…</> : <><Send className="w-4 h-4"/>Send Message</>}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
+              {/* Message history */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-gray-400" /> Message History
+                </h3>
+                {messagesLoading ? (
+                  <div className="flex justify-center py-6"><Loader2 className="w-6 h-6 animate-spin text-gray-400"/></div>
+                ) : messages.length === 0 ? (
+                  <div className="text-center py-8">
+                    <MessageSquare className="w-10 h-10 text-gray-200 mx-auto mb-2" />
+                    <p className="text-gray-400 text-sm">No messages yet. Use the form above to contact your service advisor.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                    {messages.slice().sort((a: any, b: any) => new Date(b.createdAt || b.sentAt || 0).getTime() - new Date(a.createdAt || a.sentAt || 0).getTime()).map((msg: any, i: number) => {
+                      const isSent = msg._sent;
+                      const isAdvisor = msg.notificationType === 'ADVISOR_MESSAGE' && !isSent;
+                      return (
+                        <div key={msg.notificationId || i} className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-xs lg:max-w-md rounded-2xl px-4 py-3 ${
+                            isSent
+                              ? 'bg-brand-yellow text-gray-900 rounded-tr-sm'
+                              : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+                          }`}>
+                            <p className="text-xs font-semibold mb-1 opacity-70">
+                              {isSent ? 'You' : isAdvisor ? 'Service Advisor' : msg.notificationType?.replace('_', ' ')}
+                            </p>
+                            <p className="text-sm">{msg.message || msg.subject}</p>
+                            {(msg.createdAt || msg.sentAt) && (
+                              <p className="text-xs opacity-50 mt-1 text-right">
+                                {new Date(msg.createdAt || msg.sentAt).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
         </div>

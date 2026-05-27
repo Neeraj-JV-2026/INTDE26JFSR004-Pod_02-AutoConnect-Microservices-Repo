@@ -266,7 +266,13 @@ export default function AdminPanel() {
     e.preventDefault();
     setRecallLoading(true);
     try {
-      const res = await axios.post(`${GW}/api/v1/inventory/recalls`, recallForm);
+      // Empty strings break Jackson LocalDate parsing — send null instead
+      const payload = {
+        ...recallForm,
+        issueDate:  recallForm.issueDate  || null,
+        expiryDate: recallForm.expiryDate || null,
+      };
+      const res = await axios.post(`${GW}/api/v1/inventory/recalls`, payload);
       setRecalls(prev => [res.data, ...prev]);
       flash('success', `Recall ${recallForm.recallNumber} created.`);
       setShowRecallForm(false);

@@ -23,6 +23,14 @@ export default function FinanceDashboard() {
   const [inventoryParts, setInventoryParts] = useState<any[]>([]);
   const [partsBillingSearch, setPartsBillingSearch] = useState('');
 
+  // Recall remediation billing
+  const [showRecallBilling, setShowRecallBilling] = useState(false);
+  const [recallBillingForm, setRecallBillingForm] = useState({ recallId: '', customerId: 0, laborCost: 0, partsCost: 0, notes: '' });
+  const [recallBillingLoading, setRecallBillingLoading] = useState(false);
+
+  // Recalls
+  const [recalls, setRecalls] = useState<any[]>([]);
+
   // Reference data for smart dropdowns
   const [customers, setCustomers] = useState<any[]>([]);
 
@@ -319,6 +327,34 @@ export default function FinanceDashboard() {
     }
   };
 
+  const handleBillRecallRemediation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recallBillingForm.recallId || !recallBillingForm.customerId) {
+      flash('error', 'Please select a recall and a customer.');
+      return;
+    }
+    setRecallBillingLoading(true);
+    try {
+      const subTotal = Number(recallBillingForm.laborCost) + Number(recallBillingForm.partsCost);
+      const taxAmount = parseFloat((subTotal * 0.1).toFixed(2));
+      const res = await axios.post('http://localhost:8089/api/finance/invoices', {
+        customerId: recallBillingForm.customerId,
+        relatedEntityType: 'RECALL',
+        relatedEntityId: parseInt(recallBillingForm.recallId),
+        subTotal,
+        taxAmount,
+      });
+      setInvoices(prev => [res.data, ...prev]);
+      flash('success', `Recall remediation invoice INV-${res.data.invoiceId} created. Total: $${(subTotal + taxAmount).toLocaleString()}`);
+      setShowRecallBilling(false);
+      setRecallBillingForm({ recallId: '', customerId: 0, laborCost: 0, partsCost: 0, notes: '' });
+    } catch (err: any) {
+      flash('error', err?.response?.data?.message || 'Failed to create recall invoice.');
+    } finally {
+      setRecallBillingLoading(false);
+    }
+  };
+
   useEffect(() => {
     setLoading(true);
     if (activeTab === 'invoicing') {
@@ -331,11 +367,19 @@ export default function FinanceDashboard() {
       setLoading(false);
     } else if (activeTab === 'commissions') {
       axios.get('http://localhost:8089/api/sales/commissions').then(res => setCommissions(res.data)).catch(() => setCommissions([])).finally(() => setLoading(false));
-    } else if (activeTab === 'parts-billing') {
-      axios.get('http://localhost:8089/api/v1/inventory/parts')
-        .then(res => setInventoryParts(res.data || []))
-        .catch(() => setInventoryParts([]))
+    } else if (activeTab === 'recalls') {
+      axios.get('http://localhost:8089/api/v1/inventory/recalls')
+        .then(res => setRecalls(res.data || []))
+        .catch(() => setRecalls([]))
         .finally(() => setLoading(false));
+    } else if (activeTab === 'parts-billing') {
+      Promise.all([
+        axios.get('http://localhost:8089/api/v1/inventory/parts').catch(() => ({ data: [] })),
+        axios.get('http://localhost:8089/api/v1/inventory/recalls').catch(() => ({ data: [] })),
+      ]).then(([partsRes, recallsRes]) => {
+        setInventoryParts(partsRes.data || []);
+        setRecalls(recallsRes.data || []);
+      }).finally(() => setLoading(false));
     } else if (activeTab === 'reports') {
       Promise.all([
         axios.get('http://localhost:8089/api/finance/reports').catch(() => ({ data: [] })),
@@ -363,6 +407,7 @@ export default function FinanceDashboard() {
     { id: 'refunds', name: 'Reconciliations', icon: RefreshCcw },
     { id: 'commissions', name: 'Commission Payouts', icon: DollarSign },
     { id: 'parts-billing', name: 'Parts Billing', icon: Landmark },
+    { id: 'recalls', name: 'Recalls & Returns', icon: AlertCircle },
     { id: 'reports', name: 'Financial Reports', icon: PieChart },
     { id: 'notifications', name: 'Notifications', icon: Bell },
   ];
@@ -536,7 +581,14 @@ export default function FinanceDashboard() {
                         <option value="VEHICLE">Vehicle Sale</option>
                         <option value="SERVICE">Service Repair</option>
                         <option value="PARTS">Parts Sale</option>
+                        <option value="RECALL">Recall Remediation</option>
+                        <option value="CREDIT_NOTE">Credit Note / Vehicle Return</option>
                       </select>
+                      {newInvoice.relatedEntityType === 'CREDIT_NOTE' && (
+                        <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> Enter a <strong>negative subtotal</strong> (e.g. −25000) to issue a refund credit against the customer's account.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Entity ID</label>
@@ -862,8 +914,90 @@ export default function FinanceDashboard() {
               : '0.0';
             return (
               <div className="space-y-6">
-                <h1 className="text-2xl font-bold text-gray-900">Parts Billing</h1>
-                <p className="text-sm text-gray-500 -mt-4">Parts catalog — purchase cost vs. retail pricing and estimated margin.</p>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Parts Billing</h1>
+                    <p className="text-sm text-gray-500 mt-1">Parts catalog — purchase cost vs. retail pricing and estimated margin.</p>
+                  </div>
+                  <button
+                    onClick={() => setShowRecallBilling(v => !v)}
+                    className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    {showRecallBilling ? 'Cancel' : 'Bill Recall Remediation'}
+                  </button>
+                </div>
+
+                {/* Recall Remediation Billing Form */}
+                {showRecallBilling && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+                    <h2 className="text-base font-bold text-red-900 mb-1 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" /> Recall Remediation Invoice
+                    </h2>
+                    <p className="text-xs text-red-700 mb-4">Creates a billable invoice for labour and parts used to remedy a vehicle recall. The invoice will appear in Invoicing &amp; Receivables.</p>
+                    <form onSubmit={handleBillRecallRemediation} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Recall</label>
+                        <select
+                          required
+                          value={recallBillingForm.recallId}
+                          onChange={e => setRecallBillingForm(f => ({ ...f, recallId: e.target.value }))}
+                          className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:ring-red-400 focus:border-red-400"
+                        >
+                          <option value="">— Select recall —</option>
+                          {recalls.filter((r: any) => r.status === 'ACTIVE').map((r: any) => (
+                            <option key={r.recallId} value={r.recallId}>
+                              {r.recallNumber} — {r.affectedModels}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                        <SearchableSelect
+                          options={customers.map(c => ({ value: c.customerId, label: c.name }))}
+                          value={recallBillingForm.customerId}
+                          onChange={v => setRecallBillingForm(f => ({ ...f, customerId: v }))}
+                          placeholder="Select customer"
+                          loadingText="Loading customers…"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Labour Cost ($)</label>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={recallBillingForm.laborCost}
+                          onChange={e => setRecallBillingForm(f => ({ ...f, laborCost: parseFloat(e.target.value) || 0 }))}
+                          className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-red-400 focus:border-red-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Parts Cost ($)</label>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={recallBillingForm.partsCost}
+                          onChange={e => setRecallBillingForm(f => ({ ...f, partsCost: parseFloat(e.target.value) || 0 }))}
+                          className="block w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-red-400 focus:border-red-400"
+                        />
+                      </div>
+                      <div className="md:col-span-2 bg-white border border-red-200 rounded-lg px-4 py-3 flex items-center justify-between text-sm">
+                        <div className="text-gray-600">
+                          Subtotal: <span className="font-semibold text-gray-900">${(Number(recallBillingForm.laborCost) + Number(recallBillingForm.partsCost)).toLocaleString()}</span>
+                          &nbsp;·&nbsp; Tax (10%): <span className="font-semibold text-gray-900">${((Number(recallBillingForm.laborCost) + Number(recallBillingForm.partsCost)) * 0.1).toFixed(2)}</span>
+                        </div>
+                        <div className="text-base font-bold text-red-700">
+                          Total: ${((Number(recallBillingForm.laborCost) + Number(recallBillingForm.partsCost)) * 1.1).toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="md:col-span-2 flex justify-end gap-3">
+                        <button type="button" onClick={() => setShowRecallBilling(false)} className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                        <button type="submit" disabled={recallBillingLoading} className="px-6 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold disabled:opacity-50 flex items-center gap-2">
+                          {recallBillingLoading ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : 'Create Invoice'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
 
                 {/* Summary cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -947,6 +1081,86 @@ export default function FinanceDashboard() {
               </div>
             );
           })()}
+
+          {activeTab === 'recalls' && (
+            <div className="space-y-6">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Recalls &amp; Returns</h1>
+                <p className="text-sm text-gray-500 mt-1">Active and historical safety recalls. Recall-related parts costs can be tracked via the Parts Billing tab.</p>
+              </div>
+
+              {/* Action links */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <span className="font-semibold">Billing actions:</span> Use the <strong>Parts Billing</strong> tab → <em>Bill Recall Remediation</em> button to invoice labour and parts for each recall repair. For vehicle returns, use <strong>Invoicing &amp; Receivables</strong> → <em>New Invoice</em> with type <em>Credit Note / Vehicle Return</em> and a negative subtotal.
+                </div>
+              </div>
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-red-500">
+                  <p className="text-sm font-medium text-gray-500 uppercase">Active Recalls</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{recalls.filter((r: any) => r.status === 'ACTIVE').length}</h3>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-green-500">
+                  <p className="text-sm font-medium text-gray-500 uppercase">Completed</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{recalls.filter((r: any) => r.status === 'COMPLETED').length}</h3>
+                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-gray-400">
+                  <p className="text-sm font-medium text-gray-500 uppercase">Total Recalls</p>
+                  <h3 className="text-3xl font-bold text-gray-900 mt-2">{recalls.length}</h3>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
+              ) : recalls.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No recalls on record.</p>
+                  <p className="text-sm text-gray-400 mt-1">Recalls are created and managed by the Admin Panel.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recall #</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Affected Models</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remedy</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiry</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {recalls.map((r: any) => (
+                        <tr key={r.recallId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-mono font-semibold text-gray-800">{r.recallNumber || `#${r.recallId}`}</td>
+                          <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={r.affectedModels}>{r.affectedModels || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate" title={r.description}>{r.description || '—'}</td>
+                          <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate" title={r.remedyDescription}>{r.remedyDescription || '—'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.issueDate || '—'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.expiryDate || 'Open-ended'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              r.status === 'ACTIVE' ? 'bg-red-100 text-red-800' :
+                              r.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {r.status || 'UNKNOWN'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {activeTab === 'notifications' && (
             <NotificationsPanel userId={user?.id} theme="light" limit={5} />
