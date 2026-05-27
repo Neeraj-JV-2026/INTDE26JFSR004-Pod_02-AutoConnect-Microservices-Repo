@@ -69,6 +69,11 @@ public class WarrantyService {
     }
 
     @Transactional(readOnly = true)
+    public List<WarrantyClaim> getAllClaims() {
+        return warrantyClaimRepository.findAll();
+    }
+
+    @Transactional(readOnly = true)
     public List<WarrantyClaim> getClaimsByWarranty(Long warrantyId) {
         return warrantyClaimRepository.findByWarrantyId(warrantyId);
     }

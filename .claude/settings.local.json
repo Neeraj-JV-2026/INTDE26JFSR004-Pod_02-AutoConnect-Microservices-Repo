@@ -6,7 +6,9 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\2485128\\\\Desktop\\\\WorkSpace\\\\Final Evaluation\\\\Autoconnect-microservices-repo-master\" -Directory)",
       "Bash(Select-Object Name)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\2485128\\\\Desktop\\\\WorkSpace\\\\Final Evaluation\\\\Autoconnect-microservices-repo-master\" -Recurse -Filter \"*.java\")",
-      "Bash(Select-Object -First 20 FullName)"
+      "Bash(Select-Object -First 20 FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\2485128\\\\Desktop\\\\WorkSpace\\\\Final Evaluation\\\\Autoconnect-microservices-repo-master\" -Filter \"ServiceScheduling.java\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\2485128\\\\Desktop\\\\WorkSpace\\\\Final Evaluation\\\\Autoconnect-microservices-repo-master\\\\frontend-app\\\\src\" -Filter \"CustomerPortal.tsx\" -Recurse -ErrorAction SilentlyContinue)"
     ]
   }
 }

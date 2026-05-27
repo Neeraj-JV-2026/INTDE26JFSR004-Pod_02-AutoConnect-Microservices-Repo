@@ -67,6 +67,16 @@ public class FinanceController {
         return ResponseEntity.ok(financeService.updateInvoiceStatus(id, status));
     }
 
+    @PatchMapping("/invoices/{id}/amounts")
+    @PreAuthorize("hasAnyAuthority('FINANCE_OFFICER', 'ADMIN')")
+    @Operation(summary = "Update labor/parts amounts on an existing invoice (e.g. adjust auto-generated service invoice)")
+    public ResponseEntity<InvoiceResponseDTO> updateInvoiceAmounts(
+            @PathVariable Long id,
+            @RequestParam java.math.BigDecimal subTotal,
+            @RequestParam java.math.BigDecimal taxAmount) {
+        return ResponseEntity.ok(financeService.updateInvoiceAmounts(id, subTotal, taxAmount));
+    }
+
     @PostMapping("/payments")
     @PreAuthorize("hasAnyAuthority('FINANCE_OFFICER', 'ADMIN')")
     @Operation(summary = "Process a payment for an invoice")

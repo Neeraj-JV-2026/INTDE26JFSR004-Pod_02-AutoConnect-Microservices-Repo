@@ -88,6 +88,15 @@ public class GatewayConfig {
                 .build();
     }
 
+    // ── notification-service (port 8090) ────────────────────────────────
+    @Bean
+    RouterFunction<ServerResponse> notificationServiceRoutes() {
+        return GatewayRouterFunctions.route("notification-service-routes")
+                .route(GatewayRequestPredicates.path("/api/notifications/**"), HandlerFunctions.http())
+                .filter(LoadBalancerFilterFunctions.lb("notification-service"))
+                .build();
+    }
+
     // ── CORS Configuration ───────────────────────────────────────────────
     @Bean
     public org.springframework.web.filter.CorsFilter corsFilter() {

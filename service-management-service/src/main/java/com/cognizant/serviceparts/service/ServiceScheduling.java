@@ -124,6 +124,11 @@ public class ServiceScheduling {
     public ServiceAppointment scheduleAppointment(Long id) {
         ServiceAppointment appointment = getAppointmentById(id);
 
+        // Idempotent: if already IN_PROGRESS (e.g. duplicate call or UI retry), return as-is.
+        if (appointment.getStatus() == ServiceAppointment.AppointmentStatus.IN_PROGRESS) {
+            return appointment;
+        }
+
         if (appointment.getStatus() != ServiceAppointment.AppointmentStatus.BOOKED) {
             throw new RuntimeException("Only BOOKED appointments can be moved to IN_PROGRESS. Current status: "
                     + appointment.getStatus());
@@ -317,6 +322,12 @@ public class ServiceScheduling {
     public JobCard completeJob(Long jobCardId, CompleteJobRequest request, String token) {
         JobCard jobCard = getJobCardById(jobCardId);
 
+        // Idempotent: if the job was already signed off (e.g. duplicate submit or retry),
+        // return it as-is without re-running the cascade or re-triggering the invoice.
+        if (jobCard.getStatus() == JobCard.JobCardStatus.SIGNED_OFF) {
+            return jobCard;
+        }
+
         if (jobCard.getStatus() != JobCard.JobCardStatus.IN_PROGRESS) {
             throw new RuntimeException(
                     "Job must be IN_PROGRESS to be completed. Current status: " + jobCard.getStatus());
@@ -395,18 +406,30 @@ public class ServiceScheduling {
 
     private void triggerInvoice(WorkOrder workOrder, JobCard jobCard, String token) {
         try {
+            // Labor cost = estimatedHours × $150/hr standard rate (Finance Officer can adjust afterwards)
+            java.math.BigDecimal laborRate = new java.math.BigDecimal("150.00");
+            java.math.BigDecimal hours = workOrder.getEstimatedHours() != null
+                    ? java.math.BigDecimal.valueOf(workOrder.getEstimatedHours())
+                    : java.math.BigDecimal.ONE;
+            java.math.BigDecimal subTotal = hours.multiply(laborRate)
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            java.math.BigDecimal taxAmount = subTotal
+                    .multiply(new java.math.BigDecimal("0.10"))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+
             InvoiceRequest invoiceRequest = InvoiceRequest.builder()
                     .customerId(workOrder.getAppointment().getCustomerId())
                     .relatedEntityType("WORK_ORDER")
                     .relatedEntityId(workOrder.getWoId())
-                    .subTotal(java.math.BigDecimal.ZERO)
-                    .taxAmount(java.math.BigDecimal.ZERO)
+                    .subTotal(subTotal)
+                    .taxAmount(taxAmount)
                     .dueAt(LocalDateTime.now().plusDays(30))
                     .vehicleId(workOrder.getVehicleId())
                     .workOrderId(workOrder.getWoId())
                     .jobCardId(jobCard.getJobId())
                     .serviceDate(jobCard.getEndAt())
-                    .notes("Auto-generated invoice for Work Order ID: " + workOrder.getWoId())
+                    .notes("Auto-generated invoice for Work Order ID: " + workOrder.getWoId()
+                            + " | Labor: " + hours + " hr(s) @ $150/hr")
                     .build();
 
             financeFeignClient.createInvoice(invoiceRequest, token);

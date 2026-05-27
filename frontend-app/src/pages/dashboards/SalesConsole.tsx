@@ -38,6 +38,11 @@ export default function SalesConsole() {
   const [valuationLoading, setValuationLoading] = useState(false);
   const [valuationError, setValuationError] = useState('');
 
+  // Warranty offer modal (shown after deal finalization)
+  const [warrantyModal, setWarrantyModal] = useState<{ dealId: number; vehicleId: number; customerId: number } | null>(null);
+  const [selectedWarrantyType, setSelectedWarrantyType] = useState<'BASIC' | 'EXTENDED' | 'PREMIUM'>('BASIC');
+  const [warrantyLoading, setWarrantyLoading] = useState(false);
+
   // Forms
   const [showNewLeadForm, setShowNewLeadForm] = useState(false);
   const [newLeadData, setNewLeadData] = useState({ customerId: user?.id || 1, source: 'WALK_IN', interestedModel: '', status: 'NEW', notes: '' });
@@ -190,21 +195,59 @@ export default function SalesConsole() {
       await axios.post(`http://localhost:8089/api/sales/deals/${dealId}/finalize`);
       setDeals(deals.map(d => d.dealId === dealId ? { ...d, status: 'FINALIZED' } : d));
       showFlash('success', `Deal #${dealId} finalized! Invoice sent to Finance. Commission calculated.`);
-      // Notify customer: resolve customerId via the quote linked to this deal
+
+      // Resolve quote to get vehicleId + customerId — used for notification & warranty offer
       const deal = deals.find(d => d.dealId === dealId);
       if (deal?.quoteId) {
         axios.get(`http://localhost:8089/api/sales/quotes/${deal.quoteId}`)
           .then(async qRes => {
             const customerId = qRes.data?.customerId;
+            const vehicleId  = qRes.data?.vehicleId;
             if (customerId) {
               const uid = await getIamUserId(customerId);
               sendNotification(uid, 'DEAL_FINALIZED', 'Deal Finalized — Congratulations! 🎉',
                 `Your vehicle deal #${dealId} has been finalized! Our finance team will contact you shortly with payment and delivery details.`);
             }
+            // Open warranty offer modal
+            if (vehicleId && customerId) {
+              setSelectedWarrantyType('BASIC');
+              setWarrantyModal({ dealId, vehicleId, customerId });
+            }
           }).catch(() => {/* non-critical */});
       }
     } catch (err: any) {
       showFlash('error', err?.response?.data?.message || 'Failed to finalize deal.');
+    }
+  };
+
+  const handleAddWarranty = async () => {
+    if (!warrantyModal) return;
+    setWarrantyLoading(true);
+    try {
+      const today = new Date();
+      const endDate = new Date(today);
+      const years = selectedWarrantyType === 'BASIC' ? 1 : selectedWarrantyType === 'EXTENDED' ? 3 : 5;
+      endDate.setFullYear(endDate.getFullYear() + years);
+      const fmt = (d: Date) => d.toISOString().split('T')[0];
+      await axios.post('http://localhost:8089/api/v1/inventory/warranties', {
+        vehicleId:       warrantyModal.vehicleId,
+        customerId:      warrantyModal.customerId,
+        warrantyType:    selectedWarrantyType,
+        startDate:       fmt(today),
+        endDate:         fmt(endDate),
+        mileageLimit:    selectedWarrantyType === 'BASIC' ? 20000 : selectedWarrantyType === 'EXTENDED' ? 60000 : 100000,
+        coverageDetails: selectedWarrantyType === 'BASIC'
+          ? 'Powertrain coverage — engine, transmission, drivetrain'
+          : selectedWarrantyType === 'EXTENDED'
+          ? 'Powertrain + electrical, A/C, suspension components'
+          : 'Bumper-to-bumper comprehensive coverage including wear items',
+      });
+      showFlash('success', `${selectedWarrantyType} warranty added for Vehicle #${warrantyModal.vehicleId}.`);
+    } catch (err: any) {
+      showFlash('error', err?.response?.data?.message || 'Could not save warranty — you can add it later from the Inventory module.');
+    } finally {
+      setWarrantyLoading(false);
+      setWarrantyModal(null);
     }
   };
 
@@ -237,7 +280,7 @@ export default function SalesConsole() {
       .then(res => {
         const data: any[] = res.data || [];
         setAllVehicles(data);
-        const available = data.filter((v: any) => v.status !== 'SOLD');
+        const available = data.filter((v: any) => v.status === 'AVAILABLE');
         if (available.length > 0) {
           setNewQuoteData(prev => ({ ...prev, vehicleId: available[0].vehicleId }));
         }
@@ -286,8 +329,21 @@ export default function SalesConsole() {
     }
   }, [activeTab]);
 
-  const newProspects = leads.filter(l => ['NEW', 'ASSIGNED', 'CONTACTED'].includes(l.status));
-  const negotiations = leads.filter(l => l.status === 'NEGOTIATING');
+  const newProspects  = leads.filter(l => l.status === 'NEW');
+  const contacted     = leads.filter(l => l.status === 'CONTACTED');
+  const interested    = leads.filter(l => l.status === 'INTERESTED');
+  const converted     = leads.filter(l => l.status === 'CONVERTED');
+
+  /** Advance a lead to the next status — backend: POST /api/leads/{id}/update-status?status= */
+  const advanceLeadStatus = async (lead: any, nextStatus: string) => {
+    try {
+      await axios.post(`http://localhost:8089/api/leads/${lead.leadId}/update-status?status=${nextStatus}`);
+      setLeads(prev => prev.map(l => l.leadId === lead.leadId ? { ...l, status: nextStatus } : l));
+      showFlash('success', `Lead #${lead.leadId} moved to ${nextStatus}.`);
+    } catch (err: any) {
+      showFlash('error', err?.response?.data?.message || `Failed to update lead status.`);
+    }
+  };
 
   const tabs = [
     { id: 'leads', name: 'Lead Board', icon: Users },
@@ -409,41 +465,129 @@ export default function SalesConsole() {
                 </div>
               )}
               
-              <div className="flex space-x-6 overflow-x-auto pb-4">
-                <div className="bg-gray-50 rounded-xl p-4 min-w-[300px] border border-gray-200">
+              {/* Lead Lifecycle Kanban */}
+              <div className="flex space-x-4 overflow-x-auto pb-4">
+
+                {/* Column: NEW */}
+                <div className="bg-gray-50 rounded-xl p-4 min-w-[260px] border border-gray-200 flex-shrink-0">
                   <h3 className="font-semibold text-gray-700 mb-4 flex items-center justify-between">
-                    New Prospects <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs">{newProspects.length}</span>
+                    New <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs">{newProspects.length}</span>
                   </h3>
                   <div className="space-y-3">
-                    {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> : newProspects.map(lead => (
-                      <div key={lead.leadId} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 cursor-pointer hover:border-brand-yellow hover:shadow-md transition-all">
-                        <p className="font-bold text-gray-900">Lead #{lead.leadId}</p>
-                        <p className="text-sm text-gray-500">Interested in: {lead.interestedModel || 'Any'}</p>
-                        <div className="mt-3 flex items-center text-xs text-gray-400">
-                          <Clock className="w-3 h-3 mr-1" /> {lead.status}
-                        </div>
+                    {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> :
+                     newProspects.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No new leads</p> :
+                     newProspects.map(lead => (
+                      <div key={lead.leadId} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100">
+                        <p className="font-bold text-gray-900 text-sm">Lead #{lead.leadId}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {customers.find(c => c.customerId === lead.customerId)?.name || `Customer #${lead.customerId}`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">Interested in: {lead.interestedModel || 'Any'}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">Source: {lead.source}</p>
+                        <button
+                          onClick={() => advanceLeadStatus(lead, 'CONTACTED')}
+                          className="mt-2 w-full text-xs bg-blue-600 text-white py-1 rounded font-medium hover:bg-blue-700"
+                        >
+                          Mark Contacted →
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-xl p-4 min-w-[300px] border border-gray-200">
+                {/* Column: CONTACTED */}
+                <div className="bg-blue-50 rounded-xl p-4 min-w-[260px] border border-blue-200 flex-shrink-0">
+                  <h3 className="font-semibold text-blue-700 mb-4 flex items-center justify-between">
+                    Contacted <span className="bg-blue-200 text-blue-700 px-2 py-0.5 rounded text-xs">{contacted.length}</span>
+                  </h3>
+                  <div className="space-y-3">
+                    {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> :
+                     contacted.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No contacted leads</p> :
+                     contacted.map(lead => (
+                      <div key={lead.leadId} className="bg-white p-3 rounded-lg shadow-sm border border-blue-100">
+                        <p className="font-bold text-gray-900 text-sm">Lead #{lead.leadId}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {customers.find(c => c.customerId === lead.customerId)?.name || `Customer #${lead.customerId}`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">Interested in: {lead.interestedModel || 'Any'}</p>
+                        <button
+                          onClick={() => advanceLeadStatus(lead, 'INTERESTED')}
+                          className="mt-2 w-full text-xs bg-yellow-500 text-white py-1 rounded font-medium hover:bg-yellow-600"
+                        >
+                          Mark Interested →
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Column: INTERESTED / Negotiation */}
+                <div className="bg-yellow-50 rounded-xl p-4 min-w-[260px] border border-yellow-200 flex-shrink-0">
+                  <h3 className="font-semibold text-yellow-700 mb-4 flex items-center justify-between">
+                    Interested <span className="bg-yellow-200 text-yellow-700 px-2 py-0.5 rounded text-xs">{interested.length}</span>
+                  </h3>
+                  <div className="space-y-3">
+                    {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> :
+                     interested.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No interested leads</p> :
+                     interested.map(lead => (
+                      <div key={lead.leadId} className="bg-white p-3 rounded-lg shadow-sm border border-yellow-100 border-l-4 border-l-yellow-400">
+                        <div className="flex justify-between items-start">
+                          <p className="font-bold text-gray-900 text-sm">Lead #{lead.leadId}</p>
+                          <span className="bg-yellow-100 text-yellow-800 text-xs px-1.5 py-0.5 rounded font-medium">Hot</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {customers.find(c => c.customerId === lead.customerId)?.name || `Customer #${lead.customerId}`}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">{lead.notes || 'No notes'}</p>
+                        <button
+                          onClick={() => advanceLeadStatus(lead, 'CONVERTED')}
+                          className="mt-2 w-full text-xs bg-green-600 text-white py-1 rounded font-medium hover:bg-green-700"
+                        >
+                          Convert Lead ✓
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Column: CONVERTED */}
+                <div className="bg-green-50 rounded-xl p-4 min-w-[260px] border border-green-200 flex-shrink-0">
+                  <h3 className="font-semibold text-green-700 mb-4 flex items-center justify-between">
+                    Converted <span className="bg-green-200 text-green-700 px-2 py-0.5 rounded text-xs">{converted.length}</span>
+                  </h3>
+                  <div className="space-y-3">
+                    {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> :
+                     converted.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No converted leads yet</p> :
+                     converted.map(lead => (
+                      <div key={lead.leadId} className="bg-white p-3 rounded-lg shadow-sm border border-green-100 border-l-4 border-l-green-500">
+                        <p className="font-bold text-gray-900 text-sm">Lead #{lead.leadId}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {customers.find(c => c.customerId === lead.customerId)?.name || `Customer #${lead.customerId}`}
+                        </p>
+                        <p className="text-xs text-green-600 font-medium mt-1">✓ Ready for quote</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Test Drives column */}
+                <div className="bg-gray-50 rounded-xl p-4 min-w-[260px] border border-gray-200 flex-shrink-0">
                   <h3 className="font-semibold text-gray-700 mb-4 flex items-center justify-between">
-                    Test Drive Requests <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{testDrives.filter(t => t.status === 'REQUESTED' || t.status === 'SCHEDULED').length}</span>
+                    Test Drives <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">{testDrives.filter(t => t.status === 'REQUESTED' || t.status === 'SCHEDULED').length}</span>
                   </h3>
                   <div className="space-y-3">
                     {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> :
                      testDrives.filter(t => t.status === 'REQUESTED' || t.status === 'SCHEDULED').length === 0
-                       ? <p className="text-sm text-gray-400 text-center py-4">No pending test drives.</p>
+                       ? <p className="text-xs text-gray-400 text-center py-4">No pending test drives.</p>
                        : testDrives.filter(t => t.status === 'REQUESTED' || t.status === 'SCHEDULED').map(td => (
-                      <div key={td.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:border-brand-yellow hover:shadow-md transition-all border-l-4 border-l-blue-500">
+                      <div key={td.id} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 border-l-4 border-l-blue-500">
                         <div className="flex justify-between items-start">
-                          <p className="font-bold text-gray-900">TD-{td.id}</p>
+                          <p className="font-bold text-gray-900 text-sm">TD-{td.id}</p>
                           <span className={`text-xs px-2 py-0.5 rounded font-semibold ${td.status === 'SCHEDULED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                             {td.status}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-500 mt-1">Customer #{td.customerId} • Vehicle #{td.vehicleId}</p>
+                        <p className="text-xs text-gray-500 mt-1">Customer #{td.customerId} • Vehicle #{td.vehicleId}</p>
                         <p className="text-xs text-gray-400 mt-1">
                           <Calendar className="w-3 h-3 inline mr-1" />
                           {td.scheduledAt ? new Date(td.scheduledAt).toLocaleString() : '—'}
@@ -451,7 +595,7 @@ export default function SalesConsole() {
                         {td.status === 'REQUESTED' && (
                           <button
                             onClick={() => confirmTestDrive(td)}
-                            className="mt-3 w-full text-xs bg-blue-600 text-white py-1.5 rounded font-medium hover:bg-blue-700 transition-colors"
+                            className="mt-2 w-full text-xs bg-blue-600 text-white py-1.5 rounded font-medium hover:bg-blue-700"
                           >
                             Confirm & Schedule
                           </button>
@@ -461,22 +605,6 @@ export default function SalesConsole() {
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-xl p-4 min-w-[300px] border border-gray-200">
-                  <h3 className="font-semibold text-gray-700 mb-4 flex items-center justify-between">
-                    Negotiation <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded text-xs">{negotiations.length}</span>
-                  </h3>
-                  <div className="space-y-3">
-                    {tabLoading ? <p className="text-sm text-gray-500">Loading...</p> : negotiations.map(lead => (
-                      <div key={lead.leadId} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 cursor-pointer hover:border-brand-yellow hover:shadow-md transition-all border-l-4 border-l-brand-yellow">
-                        <div className="flex justify-between items-start">
-                          <p className="font-bold text-gray-900">Lead #{lead.leadId}</p>
-                          <span className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded font-medium">Hot</span>
-                        </div>
-                        <p className="text-sm text-gray-500">{lead.notes || 'No notes'}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -552,7 +680,7 @@ export default function SalesConsole() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
                       <SearchableSelect
-                        options={allVehicles.filter(v => v.status !== 'SOLD').map(v => ({ value: v.vehicleId, label: `${v.year} ${v.make} ${v.model}` }))}
+                        options={allVehicles.filter(v => v.status === 'AVAILABLE').map(v => ({ value: v.vehicleId, label: `${v.year} ${v.make} ${v.model}` }))}
                         value={newQuoteData.vehicleId}
                         onChange={v => setNewQuoteData({...newQuoteData, vehicleId: v})}
                         placeholder="Select vehicle"
@@ -728,6 +856,66 @@ export default function SalesConsole() {
             <NotificationsPanel userId={user?.id} theme="light" limit={5} />
           )}
 
+      {/* ── Warranty Offer Modal ─────────────────────────────────────────── */}
+      {warrantyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Add Warranty Package</h2>
+              <button onClick={() => setWarrantyModal(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold leading-none">×</button>
+            </div>
+            <p className="text-sm text-gray-500 mb-5">
+              Deal <strong>#{warrantyModal.dealId}</strong> is finalized. Would you like to add a warranty for Vehicle&nbsp;
+              <strong>#{warrantyModal.vehicleId}</strong>?
+            </p>
+
+            <div className="space-y-3 mb-6">
+              {([
+                { type: 'BASIC',    years: 1, miles: '20,000',  label: 'Basic — 1 yr / 20k mi',    detail: 'Powertrain: engine, transmission, drivetrain',            price: '$499' },
+                { type: 'EXTENDED', years: 3, miles: '60,000',  label: 'Extended — 3 yr / 60k mi', detail: 'Powertrain + electrical, A/C, suspension',               price: '$1,199' },
+                { type: 'PREMIUM',  years: 5, miles: '100,000', label: 'Premium — 5 yr / 100k mi', detail: 'Bumper-to-bumper comprehensive incl. wear items',         price: '$2,499' },
+              ] as const).map(opt => (
+                <label key={opt.type} className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-colors ${
+                  selectedWarrantyType === opt.type ? 'border-brand-yellow bg-yellow-50' : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    name="warrantyType"
+                    value={opt.type}
+                    checked={selectedWarrantyType === opt.type}
+                    onChange={() => setSelectedWarrantyType(opt.type)}
+                    className="mt-0.5 accent-yellow-400"
+                  />
+                  <div className="flex-1">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-gray-900 text-sm">{opt.label}</span>
+                      <span className="text-sm font-bold text-gray-700">{opt.price}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{opt.detail}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setWarrantyModal(null)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm"
+              >
+                Skip — no warranty
+              </button>
+              <button
+                onClick={handleAddWarranty}
+                disabled={warrantyLoading}
+                className="flex-1 bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-50 text-sm flex items-center justify-center gap-2"
+              >
+                {warrantyLoading ? <><Loader2 className="w-4 h-4 animate-spin"/>Saving...</> : 'Add Warranty'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
           {activeTab === 'valuation' && (
             <div className="space-y-6">
               <h1 className="text-2xl font-bold text-gray-900">Trade-in Valuation</h1>
@@ -789,19 +977,26 @@ export default function SalesConsole() {
                       <div><p className="text-xs text-gray-500">Fair</p><p className="font-bold text-red-500">${Math.round(valuationResult.estimatedTradeIn * 0.8).toLocaleString()}</p></div>
                     </div>
                     <button
-                      onClick={() => {
-                        const payload = {
-                          customerId: customers[0]?.customerId || 1,
-                          vehicleId: allVehicles[0]?.vehicleId || 1,
-                          taxes: { amount: 0 },
-                          fees: { amount: 0 },
-                          tradeInValue: valuationResult.estimatedTradeIn,
-                          tradeInVin: valuationResult.vin,
-                          status: 'DRAFT',
-                        };
-                        axios.post('http://localhost:8089/api/sales/quotes', payload)
-                          .then(() => showFlash('success', 'Trade-in quote created in Quote Builder.'))
-                          .catch(() => showFlash('error', 'Failed to create quote.'));
+                      onClick={async () => {
+                        try {
+                          const payload = {
+                            customerId: customers[0]?.customerId || 1,
+                            vehicleId: allVehicles.find((v: any) => v.status === 'AVAILABLE')?.vehicleId || allVehicles[0]?.vehicleId || 1,
+                            taxes: { amount: 0 },
+                            fees: { amount: 0 },
+                            tradeInValue: valuationResult.estimatedTradeIn,
+                            tradeInVin: valuationResult.vin,
+                            status: 'DRAFT',
+                          };
+                          // Step 1: create draft
+                          const created = await axios.post('http://localhost:8089/api/sales/quotes', payload);
+                          // Step 2: generate — runs pricing calc so status becomes GENERATED
+                          const generated = await axios.post(`http://localhost:8089/api/sales/quotes/${created.data.quoteId}/generate`);
+                          setQuotes(prev => [...prev, generated.data]);
+                          showFlash('success', 'Trade-in quote generated in Quote Builder — ready to convert to deal.');
+                        } catch {
+                          showFlash('error', 'Failed to create trade-in quote.');
+                        }
                       }}
                       className="mt-4 w-full bg-gray-900 text-white py-2 rounded-lg font-medium hover:bg-gray-800 transition-colors"
                     >

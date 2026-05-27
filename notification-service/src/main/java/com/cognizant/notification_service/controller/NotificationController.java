@@ -34,6 +34,19 @@ public class NotificationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(notificationService.send(dto));
     }
 
+    /**
+     * Internal service-to-service endpoint — accepts any valid JWT regardless of role.
+     * Used by backend microservices (service-management, finance, etc.) that forward the
+     * originating user's token, which may carry a role (e.g. CUSTOMER) that is not in the
+     * staff-facing POST allowlist above.
+     */
+    @PostMapping("/internal")
+    @Operation(summary = "Send a notification (internal service-to-service, any authenticated role)")
+    public ResponseEntity<NotificationResponseDTO> sendInternal(
+            @Valid @RequestBody NotificationRequestDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(notificationService.send(dto));
+    }
+
     @PostMapping("/bulk")
     @PreAuthorize("hasAuthority('ADMIN')")
     @Operation(summary = "Broadcast a notification to multiple users (e.g. recall alert to all customers)")
@@ -59,21 +72,21 @@ public class NotificationController {
     }
 
     @GetMapping("/user/{userId}")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'AUDITOR', 'FINANCE_OFFICER', 'SALES_CONSULTANT', 'SERVICE_ADVISOR', 'CUSTOMER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'AUDITOR', 'FINANCE_OFFICER', 'SALES_CONSULTANT', 'SERVICE_ADVISOR', 'CUSTOMER', 'TECHNICIAN', 'PARTS_MANAGER')")
     @Operation(summary = "Get all notifications for a user (newest first)")
     public ResponseEntity<List<NotificationResponseDTO>> getByUser(@PathVariable Long userId) {
         return ResponseEntity.ok(notificationService.getByUser(userId));
     }
 
     @GetMapping("/user/{userId}/unread")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'AUDITOR', 'FINANCE_OFFICER', 'SALES_CONSULTANT', 'SERVICE_ADVISOR', 'CUSTOMER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'AUDITOR', 'FINANCE_OFFICER', 'SALES_CONSULTANT', 'SERVICE_ADVISOR', 'CUSTOMER', 'TECHNICIAN', 'PARTS_MANAGER')")
     @Operation(summary = "Get unread (SENT) notifications for a user")
     public ResponseEntity<List<NotificationResponseDTO>> getUnread(@PathVariable Long userId) {
         return ResponseEntity.ok(notificationService.getUnread(userId));
     }
 
     @GetMapping("/user/{userId}/unread/count")
-    @PreAuthorize("hasAnyAuthority('ADMIN', 'AUDITOR', 'FINANCE_OFFICER', 'SALES_CONSULTANT', 'SERVICE_ADVISOR', 'CUSTOMER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'AUDITOR', 'FINANCE_OFFICER', 'SALES_CONSULTANT', 'SERVICE_ADVISOR', 'CUSTOMER', 'TECHNICIAN', 'PARTS_MANAGER')")
     @Operation(summary = "Get unread notification count for a user (used for badge display)")
     public ResponseEntity<Map<String, Long>> countUnread(@PathVariable Long userId) {
         return ResponseEntity.ok(Map.of("unreadCount", notificationService.countUnread(userId)));

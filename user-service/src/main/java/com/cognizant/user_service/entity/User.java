@@ -38,6 +38,10 @@ public class User {
     @Column(nullable = false)
     private String status;
 
+    // false = pending admin approval; true = can log in. ADMIN registrations are auto-approved.
+    @Column(nullable = false)
+    private Boolean approved = false;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

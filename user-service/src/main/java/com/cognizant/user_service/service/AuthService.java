@@ -53,6 +53,8 @@ public class AuthService {
         user.setRole(role);
         user.setMfaEnabled(false);
         user.setStatus("ACTIVE");
+        // ADMIN registrations are auto-approved; all other roles need admin approval
+        user.setApproved("ADMIN".equals(role) || "CUSTOMER".equals(role));
 
         User savedUser = userRepository.save(user);
 
@@ -102,6 +104,12 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "User not found with email: " + request.getEmail()));
+
+        // Block unapproved accounts (non-ADMIN/CUSTOMER roles need admin approval)
+        if (!Boolean.TRUE.equals(user.getApproved())) {
+            throw new IllegalStateException(
+                    "Account pending admin approval. Please wait for an administrator to approve your account.");
+        }
 
         // ✅ LOG (DECOUPLED)
         writeAuditLog(user.getUserId(), user.getName(),

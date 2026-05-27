@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 @FeignClient(name = "notification-service", contextId = "inventoryNotificationFeignClient")
 public interface NotificationFeignClient {
 
-    @PostMapping("/api/notifications")
+    @PostMapping("/api/notifications/internal")
     void sendNotification(@RequestHeader(value = "Authorization", required = false) String token,
                           @RequestBody NotificationRequestDTO dto);
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { ShieldAlert, Users, Tags, Gift, MapPin, Database, Car, Search, Loader2, X, CheckCircle, AlertCircle, Bell, Package, Plus, Layers, UserCheck } from 'lucide-react';
+import { ShieldAlert, Users, Tags, Gift, Database, Car, Search, Loader2, X, CheckCircle, AlertCircle, Bell, Package, Plus, Layers, UserCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import NotificationsPanel from '../../components/NotificationsPanel';
 
@@ -252,6 +252,42 @@ export default function AdminPanel() {
     }
   };
 
+  // --- Recalls tab ---
+  const [recalls, setRecalls] = useState<any[]>([]);
+  const [showRecallForm, setShowRecallForm] = useState(false);
+  const [recallForm, setRecallForm] = useState({
+    recallNumber: '', description: '', affectedModels: '',
+    issueDate: new Date().toISOString().split('T')[0],
+    expiryDate: '', remedyDescription: '', status: 'ACTIVE',
+  });
+  const [recallLoading, setRecallLoading] = useState(false);
+
+  const handleCreateRecall = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecallLoading(true);
+    try {
+      const res = await axios.post(`${GW}/api/v1/inventory/recalls`, recallForm);
+      setRecalls(prev => [res.data, ...prev]);
+      flash('success', `Recall ${recallForm.recallNumber} created.`);
+      setShowRecallForm(false);
+      setRecallForm({ recallNumber: '', description: '', affectedModels: '', issueDate: new Date().toISOString().split('T')[0], expiryDate: '', remedyDescription: '', status: 'ACTIVE' });
+    } catch (err: any) {
+      flash('error', err?.response?.data?.message || 'Failed to create recall.');
+    } finally {
+      setRecallLoading(false);
+    }
+  };
+
+  const updateRecallStatus = async (id: number, status: string) => {
+    try {
+      await axios.patch(`${GW}/api/v1/inventory/recalls/${id}/status?status=${status}`);
+      setRecalls(prev => prev.map(r => r.recallId === id ? { ...r, status } : r));
+      flash('success', `Recall #${id} marked as ${status}.`);
+    } catch (err: any) {
+      flash('error', err?.response?.data?.message || 'Failed to update recall status.');
+    }
+  };
+
   // --- Audit tab ---
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
@@ -285,6 +321,11 @@ export default function AdminPanel() {
         .then(res => setPendingUsers(res.data || []))
         .catch(() => setPendingUsers([]))
         .finally(() => setApprovalLoading(false));
+    } else if (activeTab === 'recalls') {
+      axios.get(`${GW}/api/v1/inventory/recalls`)
+        .then(res => setRecalls(res.data || []))
+        .catch(() => setRecalls([]))
+        .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
@@ -341,7 +382,7 @@ export default function AdminPanel() {
     { id: 'pricing', name: 'Pricing Rules', icon: Tags },
     { id: 'promotions', name: 'Promotion Builder', icon: Gift },
     { id: 'parts', name: 'Parts Management', icon: Package },
-    { id: 'locations', name: 'Location Config', icon: MapPin },
+    { id: 'recalls', name: 'Recalls & Returns', icon: AlertCircle },
     { id: 'audit', name: 'Audit & Exports', icon: Database },
     { id: 'notifications', name: 'Notifications', icon: Bell },
   ];
@@ -1110,25 +1151,116 @@ export default function AdminPanel() {
             </div>
           )}
 
-          {activeTab === 'locations' && (
+          {/* RECALLS & RETURNS TAB */}
+          {activeTab === 'recalls' && (
             <div className="space-y-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-6">Dealership Locations</h1>
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-lg font-bold text-gray-800">Facilities</h3>
-                  <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">+ Add Location</button>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Recalls & Returns</h1>
+                  <p className="text-sm text-gray-500 mt-1">Manage active vehicle recalls. Returns are handled via the Finance team.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="border border-gray-200 p-4 rounded-lg">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-bold text-gray-800">AutoConnect HQ</h3>
-                        <p className="text-sm text-gray-500 mt-1">123 Dealer Row, Motor City</p>
-                      </div>
-                      <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded">Primary</span>
+                <button
+                  onClick={() => setShowRecallForm(!showRecallForm)}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />{showRecallForm ? 'Cancel' : 'New Recall'}
+                </button>
+              </div>
+
+              {showRecallForm && (
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                  <h2 className="text-lg font-bold text-gray-900 mb-4">Create Recall Notice</h2>
+                  <form onSubmit={handleCreateRecall} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Recall Number *</label>
+                      <input required value={recallForm.recallNumber} onChange={e => setRecallForm(p => ({ ...p, recallNumber: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="e.g. NHTSA-2024-001" />
                     </div>
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Affected Models *</label>
+                      <input required value={recallForm.affectedModels} onChange={e => setRecallForm(p => ({ ...p, affectedModels: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="e.g. Toyota Camry 2020-2022" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+                      <textarea required rows={2} value={recallForm.description} onChange={e => setRecallForm(p => ({ ...p, description: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm resize-none" placeholder="Describe the safety issue or defect…" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Remedy Description</label>
+                      <textarea rows={2} value={recallForm.remedyDescription} onChange={e => setRecallForm(p => ({ ...p, remedyDescription: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm resize-none" placeholder="Describe the fix / replacement procedure…" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Issue Date</label>
+                      <input type="date" value={recallForm.issueDate} onChange={e => setRecallForm(p => ({ ...p, issueDate: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
+                      <input type="date" value={recallForm.expiryDate} onChange={e => setRecallForm(p => ({ ...p, expiryDate: e.target.value }))}
+                        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                    </div>
+                    <div className="md:col-span-2 flex justify-end">
+                      <button type="submit" disabled={recallLoading} className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50">
+                        {recallLoading ? 'Creating…' : 'Create Recall'}
+                      </button>
+                    </div>
+                  </form>
                 </div>
+              )}
+
+              {loading ? (
+                <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 animate-spin text-gray-400" /></div>
+              ) : recalls.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">No recalls on record. Use the button above to issue a new recall notice.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recall #</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Affected Models</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {recalls.map((r: any) => (
+                        <tr key={r.recallId} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.recallNumber}</td>
+                          <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate" title={r.affectedModels}>{r.affectedModels}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.issueDate || '—'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              r.status === 'ACTIVE'    ? 'bg-red-100 text-red-800' :
+                              r.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>{r.status}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                            {r.status === 'ACTIVE' && (
+                              <button onClick={() => updateRecallStatus(r.recallId, 'COMPLETED')} className="text-green-600 hover:text-green-800 font-medium">Mark Completed</button>
+                            )}
+                            {r.status !== 'CANCELLED' && r.status !== 'COMPLETED' && (
+                              <button onClick={() => updateRecallStatus(r.recallId, 'CANCELLED')} className="text-gray-400 hover:text-gray-600 font-medium">Cancel</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Returns Notice */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+                <strong>Vehicle Returns:</strong> Customer return requests are processed through the Finance Dashboard as credit notes.
+                Contact the Finance team or navigate to Finance → Invoicing to issue a refund or credit adjustment.
               </div>
             </div>
           )}

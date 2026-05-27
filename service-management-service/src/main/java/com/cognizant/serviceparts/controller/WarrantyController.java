@@ -23,6 +23,14 @@ public class WarrantyController {
     // ─── WARRANTY CLAIMS ─────────────────────────────────────────────────────
 
     /**
+     * GET /api/v1/warranties/claims — returns all warranty claims (for advisor review).
+     */
+    @GetMapping("/claims")
+    public ResponseEntity<ApiResponse<List<WarrantyClaim>>> getAllClaims() {
+        return ResponseEntity.ok(ApiResponse.success(warrantyService.getAllClaims()));
+    }
+
+    /**
      * POST /api/v1/service/api/v1/warranties/claims
      * Submits a new warranty claim against an active warranty.
      */

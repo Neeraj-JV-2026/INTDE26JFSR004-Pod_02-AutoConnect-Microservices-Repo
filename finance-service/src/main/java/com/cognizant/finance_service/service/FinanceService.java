@@ -1,6 +1,8 @@
 package com.cognizant.finance_service.service;
 
+import com.cognizant.finance_service.client.CustomerFeignClient;
 import com.cognizant.finance_service.client.NotificationFeignClient;
+import com.cognizant.finance_service.dto.CustomerLookupDTO;
 import com.cognizant.finance_service.dto.InvoiceRequestDTO;
 import com.cognizant.finance_service.dto.InvoiceResponseDTO;
 import com.cognizant.finance_service.dto.OutboundNotificationDTO;
@@ -36,7 +38,22 @@ public class FinanceService {
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final NotificationFeignClient notificationClient;
+    private final CustomerFeignClient customerClient;
     private final SecurityUtils securityUtils;
+
+    /**
+     * Resolve the IAM userId for a CRM customer.
+     * Falls back to the CRM customerId if the lookup fails (e.g. customer-service down).
+     */
+    private Long resolveIamUserId(Long customerId, String token) {
+        try {
+            CustomerLookupDTO cust = customerClient.getCustomer("Bearer " + token, customerId);
+            return (cust != null && cust.getUserId() != null) ? cust.getUserId() : customerId;
+        } catch (Exception e) {
+            log.warn("Could not resolve IAM userId for customer {}: {}", customerId, e.getMessage());
+            return customerId; // fallback — CRM and IAM IDs often coincide in dev environments
+        }
+    }
 
     @Transactional
     public InvoiceResponseDTO generateInvoice(InvoiceRequestDTO dto) {
@@ -54,10 +71,11 @@ public class FinanceService {
         // Notify customer that their invoice has been issued
         try {
             String token = securityUtils.getCurrentJwtToken();
+            Long iamUserId = resolveIamUserId(dto.getCustomerId(), token);
             notificationClient.sendNotification("Bearer " + token, OutboundNotificationDTO.builder()
                     .customerId(dto.getCustomerId())
-                    .userId(dto.getCustomerId()) // fallback — customer's userId matches customerId in many cases
-                    .channel("EMAIL")
+                    .userId(iamUserId)
+                    .channel("IN_APP")
                     .notificationType("INVOICE_ISSUED")
                     .subject("Invoice #" + saved.getInvoiceId() + " Issued")
                     .message("A new invoice of $" + saved.getTotalAmount()
@@ -94,6 +112,26 @@ public class FinanceService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Allows a Finance Officer to set the actual labor / parts amounts on an
+     * auto-generated service invoice (which is created with an estimated figure
+     * at job sign-off time and may need adjustment after final review).
+     */
+    @Transactional
+    public InvoiceResponseDTO updateInvoiceAmounts(Long id,
+                                                    java.math.BigDecimal subTotal,
+                                                    java.math.BigDecimal taxAmount) {
+        Invoice invoice = invoiceRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found with id: " + id));
+        if ("PAID".equals(invoice.getStatus()) || "CANCELLED".equals(invoice.getStatus())) {
+            throw new BadRequestException("Cannot update amounts on a " + invoice.getStatus() + " invoice");
+        }
+        invoice.setSubTotal(subTotal);
+        invoice.setTaxAmount(taxAmount);
+        invoice.setTotalAmount(subTotal.add(taxAmount));
+        return mapToInvoiceResponse(invoiceRepository.save(invoice));
+    }
+
     @Transactional
     public InvoiceResponseDTO updateInvoiceStatus(Long id, String status) {
         validateInvoiceStatus(status);
@@ -109,10 +147,11 @@ public class FinanceService {
         if ("OVERDUE".equals(status)) {
             try {
                 String token = securityUtils.getCurrentJwtToken();
+                Long iamUserId = resolveIamUserId(invoice.getCustomerId(), token);
                 notificationClient.sendNotification("Bearer " + token, OutboundNotificationDTO.builder()
                         .customerId(invoice.getCustomerId())
-                        .userId(invoice.getCustomerId())
-                        .channel("EMAIL")
+                        .userId(iamUserId)
+                        .channel("IN_APP")
                         .notificationType("INVOICE_OVERDUE")
                         .subject("Invoice #" + id + " is Overdue")
                         .message("Invoice #" + id + " of $" + invoice.getTotalAmount()
@@ -155,10 +194,11 @@ public class FinanceService {
         // Notify customer that payment was received
         try {
             String token = securityUtils.getCurrentJwtToken();
+            Long iamUserId = resolveIamUserId(invoice.getCustomerId(), token);
             notificationClient.sendNotification("Bearer " + token, OutboundNotificationDTO.builder()
                     .customerId(invoice.getCustomerId())
-                    .userId(invoice.getCustomerId())
-                    .channel("EMAIL")
+                    .userId(iamUserId)
+                    .channel("IN_APP")
                     .notificationType("PAYMENT_RECEIVED")
                     .subject("Payment Received — Invoice #" + dto.getInvoiceId())
                     .message("Your payment of $" + dto.getAmount()

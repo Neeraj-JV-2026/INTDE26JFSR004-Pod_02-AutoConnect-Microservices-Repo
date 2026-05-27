@@ -176,19 +176,32 @@ public class DealService {
             log.warn("Failed to record commission for deal {}: {}", id, e.getMessage());
         }
 
-        // Notify customer that their deal is finalized
+        // Notify customer that their deal is finalized (userId = CRM customerId as proxy for IAM userId)
         try {
             notificationClient.sendNotification(token, NotificationRequestDTO.builder()
-                    .userId(deal.getSalesPersonId())
+                    .userId(quote.getCustomerId())   // customer's CRM ID used as userId proxy
                     .customerId(quote.getCustomerId())
-                    .channel("EMAIL")
+                    .channel("IN_APP")
                     .notificationType("DEAL_FINALIZED")
-                    .subject("Congratulations — Your Deal is Finalized!")
-                    .message("Deal #" + id + " has been finalized. Vehicle ID " + quote.getVehicleId()
-                            + " is now yours. An invoice has been generated for your records.")
+                    .subject("🎉 Congratulations — Your Deal is Finalized!")
+                    .message("Deal #" + id + " has been finalized. Your new vehicle is ready. "
+                            + "An invoice has been generated — check your Warranty & Invoices tab for details.")
                     .build());
         } catch (Exception e) {
             log.warn("Failed to send DEAL_FINALIZED notification for deal {}: {}", id, e.getMessage());
+        }
+
+        // Also notify the salesperson separately
+        try {
+            notificationClient.sendNotification(token, NotificationRequestDTO.builder()
+                    .userId(deal.getSalesPersonId())
+                    .channel("IN_APP")
+                    .notificationType("DEAL_FINALIZED")
+                    .subject("Deal #" + id + " Finalized")
+                    .message("Deal #" + id + " has been successfully finalized. Commission has been recorded.")
+                    .build());
+        } catch (Exception e) {
+            log.warn("Failed to send DEAL_FINALIZED salesperson notification for deal {}: {}", id, e.getMessage());
         }
 
         return saved;

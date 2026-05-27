@@ -16,4 +16,6 @@ public class UserResponseDTO {
     private String phone;
     private Boolean mfaEnabled;
     private String status;
+    private Boolean approved;
+    private java.time.LocalDateTime createdAt;
 }

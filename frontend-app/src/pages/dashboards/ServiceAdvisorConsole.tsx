@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Calendar, CheckSquare, Settings, MessageSquare, ClipboardList, Loader2, Search, Bell, RefreshCw, Send } from 'lucide-react';
+import { Calendar, CheckSquare, Settings, MessageSquare, ClipboardList, Loader2, Search, Bell, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import SearchableSelect from '../../components/SearchableSelect';
 
@@ -49,6 +49,58 @@ export default function ServiceAdvisorConsole() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [allVehicles, setAllVehicles] = useState<any[]>([]);
   const [technicians, setTechnicians] = useState<any[]>([]);
+
+  // Warranty claims
+  const [warrantyClaims, setWarrantyClaims] = useState<any[]>([]);
+  const [approveModal, setApproveModal] = useState<{ claimId: number } | null>(null);
+  const [approvedAmount, setApprovedAmount] = useState('');
+  const [rejectModal, setRejectModal] = useState<{ claimId: number } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [claimActionLoading, setClaimActionLoading] = useState(false);
+  const [claimFlash, setClaimFlash] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const showClaimFlash = (ok: boolean, text: string) => {
+    setClaimFlash({ ok, text });
+    setTimeout(() => setClaimFlash(null), 4000);
+  };
+
+  const handleApproveClaim = async () => {
+    if (!approveModal) return;
+    setClaimActionLoading(true);
+    try {
+      const res = await axios.post(
+        `http://localhost:8089/api/v1/warranties/claims/${approveModal.claimId}/approve?approvedAmount=${parseFloat(approvedAmount) || 0}`
+      );
+      const updated = res.data?.data || res.data;
+      setWarrantyClaims(prev => prev.map(c => c.claimId === approveModal.claimId ? updated : c));
+      showClaimFlash(true, `Claim #${approveModal.claimId} approved.`);
+    } catch (err: any) {
+      showClaimFlash(false, err?.response?.data?.message || 'Failed to approve claim.');
+    } finally {
+      setClaimActionLoading(false);
+      setApproveModal(null);
+      setApprovedAmount('');
+    }
+  };
+
+  const handleRejectClaim = async () => {
+    if (!rejectModal) return;
+    setClaimActionLoading(true);
+    try {
+      const res = await axios.post(
+        `http://localhost:8089/api/v1/warranties/claims/${rejectModal.claimId}/reject?reason=${encodeURIComponent(rejectReason)}`
+      );
+      const updated = res.data?.data || res.data;
+      setWarrantyClaims(prev => prev.map(c => c.claimId === rejectModal.claimId ? updated : c));
+      showClaimFlash(true, `Claim #${rejectModal.claimId} rejected.`);
+    } catch (err: any) {
+      showClaimFlash(false, err?.response?.data?.message || 'Failed to reject claim.');
+    } finally {
+      setClaimActionLoading(false);
+      setRejectModal(null);
+      setRejectReason('');
+    }
+  };
 
   const [showAppointmentForm, setShowAppointmentForm] = useState(false);
   const [newAppointment, setNewAppointment] = useState({
@@ -261,6 +313,11 @@ export default function ServiceAdvisorConsole() {
     } else if (activeTab === 'comms') {
       // customers already loaded on mount; no additional fetch needed
       setLoading(false);
+    } else if (activeTab === 'warranty-claims') {
+      axios.get('http://localhost:8089/api/v1/warranties/claims')
+        .then(res => setWarrantyClaims(res.data?.data || res.data || []))
+        .catch(() => setWarrantyClaims([]))
+        .finally(() => setLoading(false));
     } else if (activeTab === 'notifications') {
       if (user?.id) {
         setNotifsLoading(true);
@@ -291,6 +348,7 @@ export default function ServiceAdvisorConsole() {
     { id: 'calendar', name: 'Appointment Calendar', icon: Calendar },
     { id: 'workorders', name: 'Work Orders', icon: ClipboardList },
     { id: 'parts', name: 'Parts Reservation', icon: Settings },
+    { id: 'warranty-claims', name: 'Warranty Claims', icon: ShieldCheck },
     { id: 'comms', name: 'Customer Comms', icon: MessageSquare },
     { id: 'notifications', name: 'Notifications', icon: Bell },
   ];
@@ -512,6 +570,146 @@ export default function ServiceAdvisorConsole() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* WARRANTY CLAIMS TAB */}
+          {activeTab === 'warranty-claims' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold text-slate-900">Warranty Claims</h1>
+                  <p className="text-sm text-slate-500 mt-1">Review and approve or reject customer warranty claim submissions.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setLoading(true);
+                    axios.get('http://localhost:8089/api/v1/warranties/claims')
+                      .then(res => setWarrantyClaims(res.data?.data || res.data || []))
+                      .catch(() => {})
+                      .finally(() => setLoading(false));
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4" /> Refresh
+                </button>
+              </div>
+
+              {claimFlash && (
+                <div className={`rounded-lg px-4 py-3 text-sm font-medium ${claimFlash.ok ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                  {claimFlash.text}
+                </div>
+              )}
+
+              {loading ? (
+                <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>
+              ) : warrantyClaims.length === 0 ? (
+                <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+                  <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500">No warranty claims found.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Claim ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Warranty ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Description</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Claimed Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200">
+                      {warrantyClaims.map((claim: any) => (
+                        <tr key={claim.claimId} className="hover:bg-slate-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">#{claim.claimId}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">W-{claim.warrantyId}</td>
+                          <td className="px-6 py-4 text-sm text-slate-700 max-w-xs truncate">{claim.claimDescription || '—'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                            {claim.claimAmount ? `$${Number(claim.claimAmount).toLocaleString()}` : '—'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              claim.status === 'APPROVED'     ? 'bg-green-100 text-green-800' :
+                              claim.status === 'REJECTED'     ? 'bg-red-100 text-red-800' :
+                              claim.status === 'UNDER_REVIEW' ? 'bg-blue-100 text-blue-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>{claim.status}</span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                            {(claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW') && (
+                              <>
+                                <button
+                                  onClick={() => { setApproveModal({ claimId: claim.claimId }); setApprovedAmount(String(claim.claimAmount || '')); }}
+                                  className="text-green-600 hover:text-green-800 font-medium"
+                                >Approve</button>
+                                <button
+                                  onClick={() => { setRejectModal({ claimId: claim.claimId }); setRejectReason(''); }}
+                                  className="text-red-500 hover:text-red-700 font-medium"
+                                >Reject</button>
+                              </>
+                            )}
+                            {claim.status === 'APPROVED' && claim.approvedAmount && (
+                              <span className="text-green-700 text-xs">Approved ${Number(claim.approvedAmount).toLocaleString()}</span>
+                            )}
+                            {claim.status === 'REJECTED' && (
+                              <span className="text-red-600 text-xs" title={claim.rejectionReason || ''}>Rejected</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Approve modal */}
+              {approveModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                  <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+                    <h3 className="font-bold text-slate-900 mb-3">Approve Claim #{approveModal.claimId}</h3>
+                    <label className="block text-sm text-slate-600 mb-1">Approved Amount ($)</label>
+                    <input
+                      type="number"
+                      value={approvedAmount}
+                      onChange={e => setApprovedAmount(e.target.value)}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-blue-400 outline-none"
+                      placeholder="0.00"
+                    />
+                    <div className="flex gap-3">
+                      <button onClick={() => setApproveModal(null)} className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm hover:bg-slate-50">Cancel</button>
+                      <button onClick={handleApproveClaim} disabled={claimActionLoading} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                        {claimActionLoading ? 'Saving…' : 'Confirm Approval'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Reject modal */}
+              {rejectModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                  <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+                    <h3 className="font-bold text-slate-900 mb-3">Reject Claim #{rejectModal.claimId}</h3>
+                    <label className="block text-sm text-slate-600 mb-1">Reason for rejection</label>
+                    <textarea
+                      value={rejectReason}
+                      onChange={e => setRejectReason(e.target.value)}
+                      rows={3}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-red-400 outline-none resize-none"
+                      placeholder="Describe why the claim is being rejected…"
+                    />
+                    <div className="flex gap-3">
+                      <button onClick={() => setRejectModal(null)} className="flex-1 border border-slate-300 text-slate-600 py-2 rounded-lg text-sm hover:bg-slate-50">Cancel</button>
+                      <button onClick={handleRejectClaim} disabled={claimActionLoading || !rejectReason.trim()} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+                        {claimActionLoading ? 'Saving…' : 'Confirm Rejection'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

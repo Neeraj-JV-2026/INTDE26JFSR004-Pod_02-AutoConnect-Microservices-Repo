@@ -102,4 +102,24 @@ public class UserService {
         User user = getUserById(id);
         userRepository.delete(user);
     }
+
+    // ── Admin Approval ────────────────────────────────────────────
+    public List<User> getPendingApprovals() {
+        return userRepository.findByApprovedFalse();
+    }
+
+    public User approveUser(Long id) {
+        User user = getUserById(id);
+        user.setApproved(true);
+        User saved = userRepository.save(user);
+        writeAuditLog(user.getUserId(), user.getName(), "APPROVE_USER", "USER", user.getUserId(), "{}");
+        return saved;
+    }
+
+    public User rejectUser(Long id) {
+        User user = getUserById(id);
+        userRepository.delete(user);
+        writeAuditLog(user.getUserId(), user.getName(), "REJECT_USER", "USER", user.getUserId(), "{}");
+        return user;
+    }
 }

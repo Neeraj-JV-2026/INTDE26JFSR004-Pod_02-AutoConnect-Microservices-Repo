@@ -97,6 +97,28 @@ public class UserController {
         return ResponseEntity.ok(mapToResponseDTO(userService.assignRole(id, role)));
     }
 
+    // ── Admin Approval Endpoints ───────────────────────────────────
+    @GetMapping("/pending-approval")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<List<UserResponseDTO>> getPendingApprovals() {
+        return ResponseEntity.ok(
+            userService.getPendingApprovals().stream()
+                .map(this::mapToResponseDTO).collect(Collectors.toList()));
+    }
+
+    @PostMapping("/{id}/approve")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<UserResponseDTO> approveUser(@PathVariable Long id) {
+        return ResponseEntity.ok(mapToResponseDTO(userService.approveUser(id)));
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAuthority('ADMIN')")
+    public ResponseEntity<Void> rejectUser(@PathVariable Long id) {
+        userService.rejectUser(id);
+        return ResponseEntity.noContent().build();
+    }
+
     private User mapToEntity(UserRequestDTO dto) {
         User user = new User();
         user.setName(dto.getName());
@@ -117,6 +139,8 @@ public class UserController {
         dto.setPhone(user.getPhone());
         dto.setMfaEnabled(user.getMfaEnabled());
         dto.setStatus(user.getStatus());
+        dto.setApproved(user.getApproved());
+        dto.setCreatedAt(user.getCreatedAt());
         return dto;
     }
 }

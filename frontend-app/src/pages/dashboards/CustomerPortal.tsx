@@ -20,10 +20,36 @@ export default function CustomerPortal() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [warranties, setWarranties] = useState<any[]>([]);
+  const [activeRecalls, setActiveRecalls] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Warranty claim form
+  const [claimWarrantyId, setClaimWarrantyId] = useState<number | null>(null);
+  const [claimDescription, setClaimDescription] = useState('');
+  const [claimLoading, setClaimLoading] = useState(false);
+
+  const handleSubmitClaim = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!claimWarrantyId) return;
+    setClaimLoading(true);
+    try {
+      await axios.post(`${API}/api/v1/warranties/claims`, {
+        warrantyId: claimWarrantyId,
+        customerId: crmCustomerId,
+        description: claimDescription,
+      });
+      showSuccess('Warranty claim submitted successfully. We will review it shortly.');
+      setClaimWarrantyId(null);
+      setClaimDescription('');
+    } catch {
+      setError('Failed to submit warranty claim. Please try again.');
+    } finally {
+      setClaimLoading(false);
+    }
+  };
 
   const [showApptForm, setShowApptForm] = useState(false);
   const [newAppt, setNewAppt] = useState({
@@ -97,9 +123,13 @@ export default function CustomerPortal() {
       Promise.all([
         invoiceReq,
         axios.get(`${API}/api/v1/inventory/warranties`).catch(() => ({ data: [] })),
-      ]).then(([invRes, warRes]) => {
+        axios.get(`${API}/api/v1/inventory/recalls/active`).catch(() => ({ data: [] })),
+      ]).then(([invRes, warRes, recallRes]) => {
         setInvoices(invRes.data);
-        setWarranties(warRes.data);
+        // Filter warranties to only those belonging to this customer
+        const all: any[] = Array.isArray(warRes.data) ? warRes.data : [];
+        setWarranties(crmCustomerId ? all.filter(w => w.customerId === crmCustomerId) : all);
+        setActiveRecalls(Array.isArray(recallRes.data) ? recallRes.data : []);
       }).finally(() => setLoading(false));
     } else {
       setLoading(false);
@@ -393,6 +423,30 @@ export default function CustomerPortal() {
           {activeTab === 'warranty' && (
             <div className="space-y-6">
               <h1 className="text-2xl font-bold text-gray-900">Warranty & Invoices</h1>
+
+              {/* Active Recalls Banner */}
+              {activeRecalls.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <h3 className="font-bold text-red-800 flex items-center gap-2 mb-2">
+                    <span className="text-red-600">⚠</span> Active Vehicle Recalls ({activeRecalls.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {activeRecalls.map((r: any) => (
+                      <div key={r.recallId} className="bg-white rounded-lg border border-red-100 p-3">
+                        <div className="flex justify-between items-start">
+                          <span className="text-sm font-semibold text-red-800">{r.recallNumber}</span>
+                          <span className="text-xs text-red-500">{r.issueDate}</span>
+                        </div>
+                        <p className="text-xs text-gray-700 mt-1">{r.description}</p>
+                        {r.affectedModels && <p className="text-xs text-gray-500 mt-1">Affected: {r.affectedModels}</p>}
+                        {r.remedyDescription && <p className="text-xs text-green-700 mt-1">Remedy: {r.remedyDescription}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-red-600 mt-3">Please contact the service desk to schedule your free recall service appointment.</p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
@@ -420,12 +474,55 @@ export default function CustomerPortal() {
                   {loading ? <Loader2 className="w-6 h-6 animate-spin mx-auto text-brand-yellow" /> :
                     warranties.length === 0 ? <p className="text-gray-500 text-center py-4">No active warranties found.</p> : (
                       <div className="space-y-3">
-                        {warranties.map((w: any) => (
-                          <div key={w.id || w.warrantyId} className="p-3 border border-gray-100 rounded hover:bg-gray-50">
-                            <p className="font-bold text-gray-900">{w.warrantyType || 'Standard Warranty'}</p>
-                            <p className="text-xs text-gray-500">Vehicle #{w.vehicleId} • Expires: {w.expirationDate || w.endDate || '—'}</p>
-                          </div>
-                        ))}
+                        {warranties.map((w: any) => {
+                          const wid = w.warrantyId || w.id;
+                          const isActive = w.status === 'ACTIVE' || !w.status;
+                          return (
+                            <div key={wid} className="p-3 border border-gray-100 rounded hover:bg-gray-50">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="font-bold text-gray-900">{w.warrantyType || 'Standard Warranty'}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    Vehicle #{w.vehicleId} • Expires: {w.endDate ? new Date(w.endDate).toLocaleDateString() : '—'}
+                                    {w.mileageLimit ? ` • ${w.mileageLimit.toLocaleString()} mi` : ''}
+                                  </p>
+                                </div>
+                                <span className={`text-xs px-2 py-0.5 rounded font-semibold ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                  {w.status || 'ACTIVE'}
+                                </span>
+                              </div>
+                              {isActive && (
+                                claimWarrantyId === wid ? (
+                                  <form onSubmit={handleSubmitClaim} className="mt-3 space-y-2">
+                                    <textarea
+                                      required
+                                      value={claimDescription}
+                                      onChange={e => setClaimDescription(e.target.value)}
+                                      placeholder="Describe the issue covered by this warranty..."
+                                      rows={2}
+                                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 resize-none"
+                                    />
+                                    <div className="flex gap-2">
+                                      <button type="submit" disabled={claimLoading} className="flex-1 text-xs bg-brand-yellow text-gray-900 py-1.5 rounded font-medium hover:bg-yellow-400 disabled:opacity-50">
+                                        {claimLoading ? 'Submitting...' : 'Submit Claim'}
+                                      </button>
+                                      <button type="button" onClick={() => { setClaimWarrantyId(null); setClaimDescription(''); }} className="text-xs text-gray-500 hover:text-gray-700 px-2">
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </form>
+                                ) : (
+                                  <button
+                                    onClick={() => setClaimWarrantyId(wid)}
+                                    className="mt-2 text-xs text-brand-yellow hover:text-yellow-600 font-medium"
+                                  >
+                                    + Submit Claim
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                 </div>
