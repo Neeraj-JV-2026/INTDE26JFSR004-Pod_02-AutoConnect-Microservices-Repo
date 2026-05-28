@@ -55,7 +55,7 @@ public class LeadController {
     }
 
     @PostMapping("/{id}/assign")
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN', 'SALES_CONSULTANT')")
     @Operation(summary = "Assign a lead to a sales consultant")
     public ResponseEntity<LeadDTO> assignLead(@PathVariable Long id, @RequestParam Long userId) {
         return ResponseEntity.ok(mapToLeadResponse(leadService.assignLead(id, userId)));
