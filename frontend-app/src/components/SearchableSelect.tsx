@@ -68,22 +68,32 @@ export default function SearchableSelect({
         type="button"
         disabled={disabled || options.length === 0}
         onClick={() => setOpen(prev => !prev)}
-        className="w-full flex items-center justify-between border border-gray-300 rounded-md px-3 py-2 bg-white text-sm text-left focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-60 disabled:cursor-not-allowed"
+        className={`
+          w-full flex items-center justify-between
+          border rounded-lg px-3.5 py-2.5 bg-white text-sm text-left
+          shadow-sm transition-all duration-150
+          focus:outline-none focus:ring-2 focus:ring-yellow-400/50 focus:border-yellow-400
+          disabled:opacity-50 disabled:cursor-not-allowed
+          ${open
+            ? 'border-yellow-400 ring-2 ring-yellow-400/40'
+            : 'border-gray-200 hover:border-gray-300'
+          }
+        `}
       >
-        <span className={selected ? 'text-gray-900 truncate pr-2' : 'text-gray-400'}>
+        <span className={`truncate pr-2 ${selected ? 'text-gray-800' : 'text-gray-400'}`}>
           {options.length === 0 ? loadingText : (selected?.label ?? placeholder)}
         </span>
         <ChevronDown
-          className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${open ? 'rotate-180 text-yellow-500' : ''}`}
         />
       </button>
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl">
+        <div className="absolute z-50 w-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-card-lg animate-fade-up overflow-hidden">
           {/* Search box */}
-          <div className="p-2 border-b border-gray-100">
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5">
+          <div className="p-2 border-b border-gray-100 bg-slate-50/60">
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
               <Search className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
               <input
                 ref={inputRef}
@@ -99,17 +109,19 @@ export default function SearchableSelect({
           {/* Options list */}
           <ul className="max-h-52 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <li className="px-3 py-2.5 text-sm text-gray-400 text-center">No results found</li>
+              <li className="px-4 py-3 text-sm text-gray-400 text-center">No results found</li>
             ) : (
               filtered.map(o => (
                 <li
                   key={o.value}
                   onClick={() => handleSelect(o)}
-                  className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                    o.value === value
-                      ? 'bg-gray-900 text-white font-medium'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`
+                    px-4 py-2.5 text-sm cursor-pointer transition-colors duration-100
+                    ${o.value === value
+                      ? 'bg-brand-blue text-brand-yellow font-semibold'
+                      : 'text-gray-700 hover:bg-slate-50'
+                    }
+                  `}
                 >
                   {o.label}
                 </li>

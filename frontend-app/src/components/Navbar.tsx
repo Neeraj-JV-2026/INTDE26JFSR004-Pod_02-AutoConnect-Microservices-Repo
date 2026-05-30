@@ -38,7 +38,7 @@ export default function Navbar() {
   const dashboardLabel = user?.role ? ROLE_LABEL[user.role] : null;
 
   return (
-    <header className="w-full flex flex-col shadow-md relative z-50">
+    <header className="w-full flex flex-col shadow-lg relative z-50">
       {/* Top bar */}
       <div className="bg-black text-gray-300 text-sm flex justify-between items-center pl-4 md:pl-12 pr-0 h-10 overflow-hidden">
         <div className="flex-1 overflow-hidden whitespace-nowrap relative flex items-center h-full mr-4 md:mr-8">
@@ -88,24 +88,32 @@ export default function Navbar() {
       </div>
 
       {/* Main Navigation */}
-      <div className="bg-[#020617] px-4 md:px-12 py-4 flex justify-between items-center border-b border-white/10">
-        <Link to="/" className="flex items-center space-x-2">
-          <span className="font-bold text-xl tracking-wider text-white mt-1">AUTOCONNECT</span>
+      <div className="bg-[#020617] px-4 md:px-12 py-4 flex justify-between items-center border-b border-white/[0.07]">
+        <Link to="/" className="flex items-center space-x-2 group">
+          <span className="font-black text-xl tracking-widest text-white group-hover:text-brand-yellow transition-colors duration-150">
+            AUTOCONNECT
+          </span>
         </Link>
 
-        <nav className="hidden lg:flex space-x-8 text-sm font-bold text-gray-300 tracking-wide items-center">
-          <Link to="/" className="text-brand-red">HOME</Link>
+        <nav className="hidden lg:flex space-x-8 text-sm font-bold text-gray-400 tracking-wide items-center">
+          <Link to="/" className="text-brand-yellow hover:text-yellow-300 transition-colors">HOME</Link>
           {isAuthenticated && dashboardPath && (
-            <Link to={dashboardPath} className="hover:text-brand-red transition-colors flex items-center">
-              <LayoutDashboard size={15} className="mr-1" />
+            <Link
+              to={dashboardPath}
+              className="hover:text-white transition-colors flex items-center gap-1.5 hover:bg-white/5 px-3 py-1.5 rounded-lg"
+            >
+              <LayoutDashboard size={15} />
               {dashboardLabel}
             </Link>
           )}
           {isAuthenticated && <NotificationBell />}
           {!isAuthenticated && (
             <>
-              <Link to="/login" className="hover:text-brand-red transition-colors">LOGIN</Link>
-              <Link to="/register" className="bg-brand-yellow text-gray-900 px-4 py-1.5 rounded font-bold hover:bg-yellow-400 transition-colors">
+              <Link to="/login" className="hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5">LOGIN</Link>
+              <Link
+                to="/register"
+                className="bg-brand-yellow text-gray-900 px-5 py-1.5 rounded-lg font-bold hover:bg-yellow-400 active:scale-[0.97] transition-all duration-150 shadow-sm"
+              >
                 REGISTER
               </Link>
             </>
